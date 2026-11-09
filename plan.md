@@ -200,7 +200,7 @@ public interface IModelAdapter                  // 特化：识别模型、改�
    → 组装 ChatRequest（system + 历史或仅当前问题 + 采样参数）
    → IChatEngine.CompleteAsync (后台线程，IAsyncEnumerable)
    → 缓冲/节流（约 30–60ms 或每 N 字符）
-   → Dispatcher.UIThread → MarkdownViewer.BeginStreaming() append
+   → Dispatcher.UIThread → 更新消息 VM 的 Markdown 字符串（32 字符/次）
    → 完成：落盘会话 JSON，触发后处理器，渲染特化图层
 ```
 
@@ -320,11 +320,11 @@ kv      ≈ 2 * layerCount * contextSize * headCountKv * (embeddingLength / head
 
 ### 5.6 流式渲染
 
-- `MarkdownViewer.Markdown` 首帧置空，随后 `BeginStreaming()` + `Append(token)`，结束时释放并做一次完整渲染。
-- 节流：累积字符数 ≥ 8 或间隔 ≥ 40ms 才 flush 一次，避免逐 token 触发文本重排。
+- **实际做法**：不使用 `BeginStreaming()` / `Append()`（有生命周期要管、异常路径易漏释放），改为 `MarkdownViewer.Markdown` 字符串绑定：每轮先把 `Content` 置空，token 累积到 32 字符才更新一次 `Content`，`finally` 再兜底刷新一次。
+- 滚动由 VM 的 `StreamingContentUpdated` 事件驱动，窗口侧统一 `ScrollToEnd()`；贴底判断（「回到底部」按钮）留待 M6 完善。
 - 思考块：若模型输出 `思考...` 段落，折进可折叠区块（用 MarkView 的 chat 预设能力，具体属性以 12.4 文档为准）。
-- 自动滚动：仅当用户停留在底部时跟随；用户上滚后暂停并显示「回到底部」。
-- 代码块：一期先靠 MarkView 内置行为（复制按钮/语言标签），高亮包按需再加。
+- 自动滚动：当前是「有更新就 `ScrollToEnd()`」；改成仅当用户停留在底部才跟随、上滚后显示「回到底部」留待 M6。
+- 代码块：MarkView 内置样式 + `MarkView.Avalonia.SyntaxHighlighting`（启动时全局 `AddTextMateHighlighting()`），带语言标签与复制按钮。
 - 公式与图表：启动时 `MarkdownViewerDefaults.Extensions.AddMath(); AddMermaid();`，或每个 viewer 用 `UseMath().UseMermaid()`。两者不等价：`AddMath()` 只注册渲染器，`UseMath()` 还会把公式语法加进该 viewer 的 pipeline，图省事就用 `Use…`。公式是 opt-in，不开时 `$…$` 原样显示，开了也不会误判 `$5`。
 - 流式中的半截 `$$` 与未闭合 ```` ```mermaid ```` 交给 MarkView 的流式补齐处理；若出现闪烁，就把这两类块在流式阶段降级为源码文本，结束后统一渲染。Mermaid 要跟浅色主题配色时，在 `MarkdownTheme.axaml` 之后追加 `avares://MarkView.Avalonia.Mermaid/Themes/MermaidTheme.axaml`。
 
@@ -358,21 +358,29 @@ kv      ≈ 2 * layerCount * contextSize * headCountKv * (embeddingLength / head
 ┌──────────────────────────────────────────────────────────────┐
 │ [模型 ▾]  已加载: WeVisOne-VL-2B  [上下文: 携带历史 ▾]  [⚙]  │  顶栏
 ├───────────┬──────────────────────────────────┬───────────────┤
-│ 会话列表   │  消息流（Markdown 流式）          │ 参数面板(可折叠)│
-│ + 新建     │  - 用户 / 助手气泡               │ - GGUF 元数据  │
-│ 今天…      │  - 代码块 / 表格 / 坐标图层      │ - GPU 层数     │
+│ 会话    新建 ⋮│  消息流（Markdown 流式）        │ 参数面板(可折叠)│
+│ 今天…      │  - 用户 / 助手气泡               │ - GGUF 元数据  │
+│            │  - 代码块 / 表格 / 坐标图层      │ - GPU 层数     │
 │            │                                  │ - 上下文长度    │
 │            │                                  │ - 采样参数      │
+│ 内存/CPU   │                                  │                │
 ├───────────┴──────────────────────────────────┴───────────────┤
 │ [多行输入框......................] [发送/停止] 12.3 tok/s     │
 └──────────────────────────────────────────────────────────────┘
 ```
 
+会话侧栏：
+
+- 标题行「会话 + 新建 + ⋮」，`⋮` 是 `MenuFlyout`：**重命名 / 清空消息 / 删除会话**；会话级操作一律收进这个菜单，不再占侧栏底部。
+- 重命名是**就地编辑**：点菜单后标题行下方展开一个输入框并自动聚焦，回车提交、Esc 取消（不改标题），提交或取消后收起。
+- 侧栏底部预留给运行时指标（内存、CPU、显存占用），一期不放按钮。
+
 - 状态：未加载模型时输入框禁用并给「选择一个模型开始」空状态。
 - 顶栏显示上下文占用（已用/总量）与 tok/s，生成结束后保留。
-- 消息操作：复制、重新生成、删除该轮、编辑后重发（一期至少「复制 + 重新生成 + 删除」）。
-- 快捷键：`Ctrl+Enter` 发送、`Esc` 停止、`Ctrl+N` 新会话、`Ctrl+,` 设置。
+- 消息操作：复制、重新生成、删除该轮、编辑后重发（一期至少「复制 + 重新生成 + 删除」）。前三项已实现，重新生成只对最后一轮生效（删中间那条再追加会把历史顺序打乱），编辑后重发留二期。
+- 快捷键：`Ctrl+Enter` 发送、`Esc` 停止生成（无生成任务时关闭设置）、`Ctrl+N` 新会话、`Ctrl+,` 设置、`Ctrl+R` 重新扫描。
 - 全局固定 Material 浅色：背景用 Material 的 Surface 色阶，不要写死 `#FFF`，否则卡片/侧栏层次全糊；MarkView 主题与 palette 同色系。
+- 图标：源图就是仓库根目录的 `Logo.png`（512×512），拷进 `src/BonsaiLLM.App/Assets/` 作 `AvaloniaResource`；窗口用 `MainWindow.Icon="/Assets/logo.png"`，exe/任务栏用 `Assets/app.ico`（16/24/32/48/64/128/256 多尺寸）+ `ApplicationIcon`。两者要分别设，只配 `ApplicationIcon` 不会换掉窗口左上角和任务栏的图标。
 
 ## 7. 里程碑
 
@@ -401,9 +409,12 @@ kv      ≈ 2 * layerCount * contextSize * headCountKv * (embeddingLength / head
 - [ ] 连续 20 轮对话无内存持续增长、无 UI 卡顿（拖动窗口仍流畅）
 - [x] 公式与图表：`$\frac{a}{b}$`、`$$…$$` 与 ```` ```mermaid graph TD ```` 各渲染一次，配色跟浅色主题，流式结束后无闪烁
 - [x] 窗口渲染未受 SkiaSharp 4.153.1 影响（无 MissingMethodException、无黑块）
-- [ ] 「携带历史」能记住上一轮信息；「每次全新」在同一会话内不携带上一轮
+- [x] 「携带历史」能记住上一轮信息（同会话连续两轮已复现）
+- [ ] 「每次全新」在同一会话内不携带上一轮
 - [x] 停止生成后已输出内容保留且可继续提问
 - [x] 关闭应用再打开，会话列表与消息完整恢复
+- [x] 消息操作：复制进剪贴板、重新生成末轮、删除该轮后列表与统计同步
+- [x] 会话 `⋮` 菜单：重命名就地编辑（Esc 取消不改标题）、清空消息、删除会话；空会话清空时提示「当前会话没有消息」
 - [ ] 显存不足时给出中文可读提示，不崩溃
 - [ ] 所选后端初始化失败时报错并可重新选择，不静默降级到 CPU
 - [ ] 坐标样例：2B 对一张图输出框，界面框与图对齐；窗口缩放、图片长宽比变化后仍对齐

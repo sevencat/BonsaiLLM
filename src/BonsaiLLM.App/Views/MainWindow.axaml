@@ -5,6 +5,7 @@
         x:Class="BonsaiLLM.App.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         Title="BonsaiLLM"
+        Icon="/Assets/logo.png"
         Width="1080"
         Height="760"
         FontSize="{Binding FontSize}"
@@ -58,17 +59,42 @@
 
     <!-- 会话侧栏 -->
     <Border Grid.Column="0" Background="#FAFAFB" BorderThickness="0,0,1,0" BorderBrush="#E5E7EB">
-      <Grid RowDefinitions="Auto,*,Auto" Margin="12,14">
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto">
+      <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="12,14">
+        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
           <TextBlock Text="会话" FontWeight="SemiBold" VerticalAlignment="Center" />
           <Button Grid.Column="1"
                   Content="新建"
                   FontSize="12"
                   Padding="10,2"
                   Command="{Binding NewSessionCommand}" />
+          <Button Grid.Column="2"
+                  Content="⋮"
+                  FontSize="14"
+                  Padding="8,0"
+                  ToolTip.Tip="更多会话操作">
+            <Button.Flyout>
+              <MenuFlyout Placement="BottomEdgeAlignedRight">
+                <MenuItem Header="重命名"
+                          Command="{Binding BeginRenameCommand}" />
+                <MenuItem Header="清空消息"
+                          Command="{Binding ClearSessionCommand}" />
+                <MenuItem Header="删除会话"
+                          Command="{Binding DeleteCurrentSessionCommand}" />
+              </MenuFlyout>
+            </Button.Flyout>
+          </Button>
         </Grid>
 
-        <ListBox Grid.Row="1"
+        <TextBox Grid.Row="1"
+                 Name="RenameBox"
+                 Text="{Binding SessionTitleDraft}"
+                 PlaceholderText="会话名称，回车确认"
+                 FontSize="12"
+                 Margin="0,8,0,0"
+                 IsVisible="{Binding IsRenaming}"
+                 KeyDown="OnRenameKeyDown" />
+
+        <ListBox Grid.Row="2"
                  Classes="sessionList"
                  Margin="0,10"
                  ItemsSource="{Binding Sessions}"
@@ -85,23 +111,8 @@
           </ListBox.ItemTemplate>
         </ListBox>
 
-        <StackPanel Grid.Row="2" Spacing="6">
-          <TextBox Text="{Binding SessionTitleDraft}"
-                   PlaceholderText="会话名称"
-                   FontSize="12"
-                   KeyDown="OnRenameKeyDown" />
-          <Grid ColumnDefinitions="*,*" ColumnSpacing="6">
-            <Button Content="重命名"
-                    FontSize="12"
-                    HorizontalAlignment="Stretch"
-                    Command="{Binding RenameSessionCommand}" />
-            <Button Grid.Column="1"
-                    Content="删除"
-                    FontSize="12"
-                    HorizontalAlignment="Stretch"
-                    Command="{Binding DeleteCurrentSessionCommand}" />
-          </Grid>
-        </StackPanel>
+        <!-- 侧栏底部：预留给内存 / CPU / GPU 占用等运行时指标 -->
+        <Border Grid.Row="3" Margin="0,8,0,0" />
       </Grid>
     </Border>
 
@@ -168,37 +179,50 @@
       </Border>
 
       <!-- 对话区 -->
-      <ScrollViewer Grid.Row="1" Name="ChatScroll" Padding="20,12" IsVisible="{Binding !IsEmptyVisible}">
-        <ItemsControl ItemsSource="{Binding Messages}">
-          <ItemsControl.ItemTemplate>
-            <DataTemplate x:DataType="vm:ChatMessageViewModel">
-              <StackPanel>
-                <views:MarkdownMessageView />
-                <StackPanel Orientation="Horizontal"
-                            Spacing="6"
-                            Margin="6,-4,0,6"
-                            IsVisible="{Binding IsAssistant}">
-                  <Button Content="复制"
-                          FontSize="11"
-                          Padding="8,1"
-                          Tag="{Binding}"
-                          Click="OnCopyMessage" />
-                  <Button Content="重新生成"
-                          FontSize="11"
-                          Padding="8,1"
-                          Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RegenerateCommand}"
-                          CommandParameter="{Binding}" />
-                  <Button Content="删除"
-                          FontSize="11"
-                          Padding="8,1"
-                          Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeleteMessageCommand}"
-                          CommandParameter="{Binding}" />
+      <Grid Grid.Row="1" IsVisible="{Binding !IsEmptyVisible}">
+        <ScrollViewer Name="ChatScroll" Padding="20,12" ScrollChanged="OnChatScrollChanged">
+          <ItemsControl ItemsSource="{Binding Messages}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:DataType="vm:ChatMessageViewModel">
+                <StackPanel>
+                  <views:MarkdownMessageView />
+                  <StackPanel Orientation="Horizontal"
+                              Spacing="6"
+                              Margin="6,-4,0,6"
+                              IsVisible="{Binding IsAssistant}">
+                    <Button Content="复制"
+                            FontSize="11"
+                            Padding="8,1"
+                            Tag="{Binding}"
+                            Click="OnCopyMessage" />
+                    <Button Content="重新生成"
+                            FontSize="11"
+                            Padding="8,1"
+                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RegenerateCommand}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="删除"
+                            FontSize="11"
+                            Padding="8,1"
+                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeleteMessageCommand}"
+                            CommandParameter="{Binding}" />
+                  </StackPanel>
                 </StackPanel>
-              </StackPanel>
-            </DataTemplate>
-          </ItemsControl.ItemTemplate>
-        </ItemsControl>
-      </ScrollViewer>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+        </ScrollViewer>
+
+        <!-- 用户上滚后停止跟随，改为显式的「回到底部」 -->
+        <Button Name="ScrollToBottomButton"
+                Content="回到底部 ↓"
+                FontSize="12"
+                Padding="12,4"
+                IsVisible="False"
+                HorizontalAlignment="Center"
+                VerticalAlignment="Bottom"
+                Margin="0,0,0,14"
+                Click="OnScrollToBottomClick" />
+      </Grid>
 
       <!-- 模型已就绪 -->
       <Border Grid.Row="1" IsVisible="{Binding ShowReadyHint}" Padding="40">

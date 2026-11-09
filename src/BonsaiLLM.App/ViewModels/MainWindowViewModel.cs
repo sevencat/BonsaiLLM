@@ -101,6 +101,9 @@ public partial class MainWindowViewModel : ObservableObject
     /// <summary>流式内容增长时触发，供窗口把滚动条跟到底部。</summary>
     public event EventHandler? StreamingContentUpdated;
 
+    /// <summary>请求进入重命名编辑态时触发，供窗口把焦点移到输入框。</summary>
+    public event EventHandler? RenameRequested;
+
     public string Header => $"BonsaiLLM · {ActiveEngine.DisplayName}";
 
     public string SettingsFilePath => $"设置文件：{_settingsStore.FilePath}";
@@ -169,6 +172,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private string _sessionTitleDraft = string.Empty;
+
+    [ObservableProperty]
+    private bool _isRenaming;
 
     [ObservableProperty]
     private string _profileGpuLayersText = "99";
@@ -480,7 +486,25 @@ public partial class MainWindowViewModel : ObservableObject
             _session.Title = MakeTitle(text);
         }
 
-        await StreamAssistantAsync();
+        await (_generation = StreamAssistantAsync());
+    }
+
+    /// <summary>当前正在跑的生成任务，供清空/删除会话时等它收尾。</summary>
+    private Task? _generation;
+
+    /// <summary>取消并等待生成任务收尾，避免它把回复写回已经清空/删除的会话。</summary>
+    private async Task StopGenerationAsync()
+    {
+        if (!IsStreaming)
+        {
+            return;
+        }
+
+        _cts?.Cancel();
+        if (_generation is { } task)
+        {
+            await task;
+        }
     }
 
     /// <summary>在历史末尾生成一条助手回复（发送与重新生成共用）。</summary>
@@ -604,7 +628,7 @@ public partial class MainWindowViewModel : ObservableObject
         PersistSession();
         RefreshSessionItem();
 
-        await StreamAssistantAsync();
+        await (_generation = StreamAssistantAsync());
     }
 
     [RelayCommand]
@@ -646,6 +670,26 @@ public partial class MainWindowViewModel : ObservableObject
         StatusText = "已新建会话";
     }
 
+    [RelayCommand]
+    private void BeginRename()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        SessionTitleDraft = _session.Title;
+        IsRenaming = true;
+        RenameRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    [RelayCommand]
+    private void CancelRename()
+    {
+        SessionTitleDraft = _session?.Title ?? string.Empty;
+        IsRenaming = false;
+    }
+
     private bool CanRenameSession() => _session is not null && !string.IsNullOrWhiteSpace(SessionTitleDraft);
 
     [RelayCommand(CanExecute = nameof(CanRenameSession))]
@@ -657,25 +701,49 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         _session.Title = SessionTitleDraft.Trim();
+        IsRenaming = false;
         PersistSession();
         RefreshSessionItem();
         StatusText = "会话已重命名";
     }
 
+    [RelayCommand]
+    private async Task ClearSessionAsync()
+    {
+        if (_session is null)
+        {
+            return;
+        }
+
+        // 生成中先取消并等它收尾，否则收尾逻辑会把回复写回刚清空的会话
+        await StopGenerationAsync();
+
+        if (_session is null || Messages.Count == 0 && _session.Messages.Count == 0)
+        {
+            StatusText = "当前会话没有消息";
+            return;
+        }
+
+        Messages.Clear();
+        _session.Messages.Clear();
+        PersistSession();
+        RefreshSessionItem();
+        UpdateStats(null, null, null);
+        StatusText = "已清空当前会话的消息";
+    }
+
     partial void OnSessionTitleDraftChanged(string value) => RenameSessionCommand.NotifyCanExecuteChanged();
 
     [RelayCommand]
-    private void DeleteCurrentSession()
+    private async Task DeleteCurrentSessionAsync()
     {
         if (CurrentSession is not { } item)
         {
             return;
         }
 
-        if (IsStreaming)
-        {
-            _cts?.Cancel();
-        }
+        // 先等生成收尾，否则收尾时的 PersistSession 会把刚删掉的文件又写回去
+        await StopGenerationAsync();
 
         _sessionStore.TryDelete(item.Id);
         Sessions.Remove(item);

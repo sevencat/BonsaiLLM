@@ -66,27 +66,78 @@ public partial class MainWindow : Window
         {
             vm.Messages.CollectionChanged += OnMessagesChanged;
             vm.StreamingContentUpdated += OnStreamingContentUpdated;
+            vm.RenameRequested += OnRenameRequested;
         }
+    }
+
+    private void OnRenameRequested(object? sender, EventArgs e)
+    {
+        Dispatcher.UIThread.Post(
+            () =>
+            {
+                var box = this.FindControl<TextBox>("RenameBox");
+                box?.Focus();
+                box?.SelectAll();
+            },
+            DispatcherPriority.Background);
     }
 
     private void OnMessagesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        if (e.Action != NotifyCollectionChangedAction.Add
-            || Environment.GetCommandLineArgs().Contains("--selfcheck"))
+        if (e.Action != NotifyCollectionChangedAction.Add)
         {
             return;
         }
 
-        Dispatcher.UIThread.Post(
-            () => this.FindControl<ScrollViewer>("ChatScroll")?.ScrollToEnd(),
-            DispatcherPriority.Background);
+        // 自己发的新消息一定跟到底部，助手回复则尊重用户当前位置
+        var force = e.NewItems?.Count > 0
+            && e.NewItems[0] is ChatMessageViewModel { IsAssistant: false };
+        Dispatcher.UIThread.Post(() => ScrollToTail(force), DispatcherPriority.Background);
     }
 
     private void OnStreamingContentUpdated(object? sender, EventArgs e)
+        => Dispatcher.UIThread.Post(() => ScrollToTail(false), DispatcherPriority.Background);
+
+    private void OnChatScrollChanged(object? sender, ScrollChangedEventArgs e)
     {
-        Dispatcher.UIThread.Post(
-            () => this.FindControl<ScrollViewer>("ChatScroll")?.ScrollToEnd(),
-            DispatcherPriority.Background);
+        // 只认 offset 变化：内容变长带来的 Extent 增长不算用户滚动，否则流式输出时会误判成「已上滚」
+        if (e.OffsetDelta.Y == 0 || sender is not ScrollViewer scroll)
+        {
+            return;
+        }
+
+        UpdateScrollToBottomButton(!IsAtBottom(scroll));
+    }
+
+    private void OnScrollToBottomClick(object? sender, RoutedEventArgs e) => ScrollToTail(true);
+
+    private static bool IsAtBottom(ScrollViewer scroll)
+        => scroll.Extent.Height - scroll.Viewport.Height - scroll.Offset.Y <= ScrollTailThreshold;
+
+    private const double ScrollTailThreshold = 32;
+
+    private void ScrollToTail(bool force)
+    {
+        if (this.FindControl<ScrollViewer>("ChatScroll") is not { } scroll)
+        {
+            return;
+        }
+
+        if (!force && !IsAtBottom(scroll))
+        {
+            return;
+        }
+
+        scroll.ScrollToEnd();
+        UpdateScrollToBottomButton(false);
+    }
+
+    private void UpdateScrollToBottomButton(bool visible)
+    {
+        if (this.FindControl<Button>("ScrollToBottomButton") is { } button)
+        {
+            button.IsVisible = visible;
+        }
     }
 
     private void OnInputKeyDown(object? sender, KeyEventArgs e)
@@ -185,9 +236,19 @@ public partial class MainWindow : Window
 
     private void OnRenameKeyDown(object? sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter
-            && DataContext is MainWindowViewModel vm
-            && vm.RenameSessionCommand.CanExecute(null))
+        if (DataContext is not MainWindowViewModel vm)
+        {
+            return;
+        }
+
+        if (e.Key == Key.Escape)
+        {
+            vm.CancelRenameCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+
+        if (e.Key == Key.Enter && vm.RenameSessionCommand.CanExecute(null))
         {
             vm.RenameSessionCommand.Execute(null);
             e.Handled = true;

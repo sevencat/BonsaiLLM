@@ -221,14 +221,20 @@
 ## 14. M3–M6 实现记录
 
 - **会话持久化**：`ChatSession` / `SessionStore` 放 `BonsaiLLM.Core.Sessions`，一会话一文件 `%AppData%\BonsaiLLM\sessions\{id}.json`，写入走"临时文件 + `File.Replace`"。标题取首条 user 消息前 24 字。
+- **空状态遮罩会吃掉消息**：`IsEmptyVisible` 原先只看 `Models.Count`，模型列表为空时那层「添加模型目录」遮罩盖住整个消息区，表现为发完消息看不到回复。改成 `Models.Count == 0 && Messages.Count == 0`，并在 `Messages.CollectionChanged` 里调 `UpdateEmptyState()`。排查时容易误判成"消息没上屏"。
 - **上下文占用要区分两种值**：`UsageInfo` 里的 prompt/completion 是**本轮**用量；顶栏「上下文 已用/总量」用 `IChatEngine.ContextTokensUsed`，即 KV cache 里的累计值（引擎在 `StreamAsync` 的 finally 里累加，重开上下文时清零）。切换会话后引擎还没重建，此时按当前会话消息重新估算（`EstimateContextTokens`），否则会显示上一个会话的数字。
 - **裁剪**：`BuildRequestHistory` 从最新一条往前累加，超出 `contextSize - maxTokens(缺省 1024) - 128` 就丢最旧的，并保证请求以 user 开头；`StatsText` 追加「已裁剪 N 条」。实测把 profile 的 `contextSize` 临时改 1024 后，12 条历史被裁掉 4 条，界面仍显示完整历史。
 - **生成中切换会话**：`StreamAssistantAsync` 开头固定住发起时的 `_session`，收尾写盘、追加消息都用这个局部变量，避免取消后把旧回复追加到新会话。
+- **流式刷新走 VM 事件而非 `BeginStreaming()`**：消息体是 `MarkdownViewer.Markdown` 字符串绑定，每轮开始先清空，token 累积到 32 字符触发一次 `StreamingContentUpdated`，`finally` 再兜底触发一次；窗口侧订阅该事件统一 `ScrollToEnd()`。没有 `Append`/`Dispose` 生命周期要管，异常路径也不会漏释放。
+- **设置面板（M5）**：后端、显卡型号、系统提示词、当前模型四项参数、字号 Slider（12–20，绑 `Window.FontSize`）、模型目录列表。参数落在 `settings.json` 的 `modelProfiles[模型绝对路径]`，`SaveProfileCommand` 写盘后给 `ProfileNotice` 提示，下一轮请求即生效（`ChatOptions` 每轮从 profile 读，不需要重新加载模型）。
 - **消息操作**：助手消息下方「复制 / 重新生成 / 删除」。Avalonia 12 的剪贴板是 `IClipboard.SetDataAsync(IAsyncDataTransfer)`：`new DataTransfer()` + `DataTransferItem.CreateText(text)`；`DataTransfer` 在 `Avalonia.Input`。旧的 `SetTextAsync` 只在 `ClipboardExtensions` 里，容易误判成 API 被删。`OnCopyMessage` 用 try/catch 把失败写进状态栏，不再静默返回。
 - **重新生成只允许最后一轮**：删中间那条再追加到末尾会把历史顺序打乱，命中非最后一条时只提示「只能重新生成最后一条回复」。
+- **应用图标**：根目录 `Logo.png`（512×512、24bpp 无 alpha）复制到 `src/BonsaiLLM.App/Assets/logo.png`，csproj 加 `<AvaloniaResource Include="Assets\logo.png" />`，`MainWindow` 上 `Icon="/Assets/logo.png"`（`WindowIcon` 由字符串路径的 TypeConverter 转，不用手动 `Bitmap`）。exe/任务栏图标靠 `<ApplicationIcon>Assets\app.ico</ApplicationIcon>`；`app.ico` 是用 PowerShell 现搓的：ICONDIR + 16 字节目录项（宽高字节、planes=1、bitCount=32、数据长、偏移）+ 各尺寸 PNG 数据，尺寸 16/24/32/48/64/128/256，256 的宽高字节写 0。只设 `ApplicationIcon` 不换窗口图标，只设 `Window.Icon` 不换 exe 图标，两处都要。
+- **会话级操作收进 `⋮` 菜单**：侧栏标题行「会话 + 新建 + ⋮」，`Button.Flyout` 挂 `MenuFlyout`（重命名 / 清空消息 / 删除会话）。侧栏底部空出来留给内存、CPU、显存等运行时指标。重命名改成就地编辑：`IsRenaming` 控制输入框显隐，VM 触发 `RenameRequested` 事件让窗口 `Dispatcher.UIThread.Post` 去 `Focus()` + `SelectAll()`（展开后才存在控件，直接 Focus 拿不到），回车提交、Esc 走 `CancelRenameCommand` 还原标题。
+- **清空/删除会话前必须等生成任务收尾**：`StreamAssistantAsync` 的 `finally` 会往发起时的会话追加回复并 `PersistSession`，如果只是 `_cts.Cancel()` 就立刻清空/删除，回复会被写回刚清空的会话、删掉的文件也会被重新写出来。做法是把生成任务存进 `_generation`，`StopGenerationAsync()` 里 cancel 后 `await` 它，`ClearSessionAsync` / `DeleteCurrentSessionAsync` 先等再动数据。
 - **语法高亮**：加 `MarkView.Avalonia.SyntaxHighlighting 12.4.*`，在 `App.axaml.cs` 建窗口前 `MarkdownViewerDefaults.Extensions.AddTextMateHighlighting()`（全局默认，Light+ 主题）。自检截图里 C# 代码块的 `var`/`new`/注释已按 token 着色。
 - **快捷键**：`Ctrl+Enter` 发送、`Esc` 停止生成（无生成时关闭设置）、`Ctrl+N` 新会话、`Ctrl+,` 设置、`Ctrl+R` 重新扫描。
-- **截图验证脚本**：`C:\Users\Public\bonsai-shot.ps1`（临时，不入库），用 `PrintWindow` + `SendKeys` 自动截图；`-ClickX/-ClickY` 按窗口比例点击。测按钮坐标别靠肉眼估：把图放大后用像素扫描（找主色按钮块）定位更准，之前 y 差 20px 就整轮点空。
+- **截图验证脚本**（临时，已清理，需要时按此重写）：PowerShell + Win32 P/Invoke，`PrintWindow` 抓窗口、`SetCursorPos`+`mouse_event` 点击、`WScript.Shell.SendKeys` 输入，`-ClickX/-ClickY` 按窗口比例定位。测按钮坐标别靠肉眼估：把图放大后用像素扫描（找主色按钮块）求行范围，之前 y 差 20px 就整轮点空。
 
 ## 15. 许可证
 
