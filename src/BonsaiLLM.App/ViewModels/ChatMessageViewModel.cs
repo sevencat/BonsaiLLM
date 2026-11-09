@@ -15,6 +15,8 @@ public partial class ChatMessageViewModel : ObservableObject
 
     public bool IsUser => Role == ChatRole.User;
 
+    public bool IsAssistant => Role == ChatRole.Assistant;
+
     [ObservableProperty]
     private string _text;
 

@@ -53,6 +53,7 @@
 | Markdown | MarkView.Avalonia | **12.4.\*** |
 | 公式 | MarkView.Avalonia.Math | **12.4.\***（LaTeX `$…$` / `$$…$$`，CSharpMath 渲染） |
 | 图表 | MarkView.Avalonia.Mermaid | **12.4.\***（`mermaid` 围栏 → SVG → 栅格化，纯 .NET） |
+| 代码高亮 | MarkView.Avalonia.SyntaxHighlighting | **12.4.\***（TextMate；启动时全局 `AddTextMateHighlighting()`） |
 | 推理 | LLamaSharp | **0.30.0** |
 | 原生后端 | LLamaSharp.Backend.Cuda12.Windows + .Vulkan.Windows | 0.30.0，**两个都带**，运行时选择 |
 | MVVM | CommunityToolkit.Mvvm | 8.x |
@@ -86,6 +87,7 @@ runtimes\win-x64\native\avx2\     CPU 变体（avx / avx2 / avx512 / noavx 各�
   <PackageReference Include="MarkView.Avalonia" Version="12.4.*" />
   <PackageReference Include="MarkView.Avalonia.Math" Version="12.4.*" />
   <PackageReference Include="MarkView.Avalonia.Mermaid" Version="12.4.*" />
+  <PackageReference Include="MarkView.Avalonia.SyntaxHighlighting" Version="12.4.*" />
   <PackageReference Include="LLamaSharp" Version="0.30.0" />
   <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
   <PackageReference Include="SkiaSharp" Version="4.153.1" />
@@ -102,7 +104,7 @@ CUDA 包依赖 `LLamaSharp.Backend.Cpu`，所以 CPU（avx 系列）天然可用
 
 两点待编译时确认：`WithCuda()` / `WithVulkan()` 在 0.30 的 `LLamaSharp.dll` 里已确认存在（同族还有 `WithSearchDirectory`、`WithLogCallback`），参数形式以编译为准；Vulkan 0.30 包本机尚未还原（缓存里只有 0.27），但 0.27 已是 `native\vulkan` 布局，restore 后核对一眼目录名即可。
 
-暂不引用、需要时再加（按优先级）：`MarkView.Avalonia.SyntaxHighlighting`（代码高亮）、`MarkView.Avalonia.Svg`（SVG 图片）、`Material.Avalonia.Dialogs`。
+暂不引用、需要时再加：`MarkView.Avalonia.Svg`（SVG 图片）、`Material.Avalonia.Dialogs`。
 
 **SkiaSharp 被抬到 4.153.1 的原因**：核心包 `MarkView.Avalonia 12.4.0` 只依赖 `Avalonia 12.1.4+` 与 `Markdig`，nuspec 与程序集里都没有 SkiaSharp；声明 `SkiaSharp 4.153.1` 的是 `.Math` / `.Mermaid` 两个子包（12.2 起）。NuGet 会统一到 4.153.1，Avalonia 12.1.5 与我们的图像代码也随 4.x 编译。该版本已核实发布（4.153.0–4.153.3 都有 win32 原生包），但 Avalonia 12.1.5 是按 3.119.4 编的，M1 必须亲手验一次窗口渲染 + 公式 + mermaid（见 9 节风险表）。
 
@@ -386,20 +388,22 @@ kv      ≈ 2 * layerCount * contextSize * headCountKv * (embeddingLength / head
 
 合计约 7 人日（单人，MTMD 链路已验证，不再预留探索时间）。
 
+**进度**：M1 完成（2026-11-09，含 Markdown 流式、表格/代码块/公式/mermaid、链接配色）；M2 完成（2026-11-09，含 GGUF 元数据、mmproj 配对、CUDA12/Vulkan/CPU 后端、GPU 推荐值、自动加载上次模型、设置面板；真实模型已跑通一轮对话，M3 的流式主链路也随之验证）；M3 完成（停止、错误提示、首 token 延迟、tok/s、KV 增量预填充）；M4 完成（多会话 CRUD + 重启恢复、携带历史/每次全新、token 预算裁剪、system prompt、顶栏上下文占用）；M5 完成（设置面板、模型目录管理、单模型参数覆盖并落盘、字号、快捷键）；M6 部分完成（消息复制/重新生成/删除、代码块语法高亮、空状态、流式滚动跟随；日志抽屉与消息虚拟化未做）；M7 未开始。实现顺序与偏差见 `misc.md` 第 13、14 节。
+
 ## 8. 验收清单
 
 - [ ] 冷启动到可输入 < 2s（不含模型加载）
-- [ ] 扫描 200 个 gguf 目录 < 3s，UI 不冻结
-- [ ] 首次启动无目录时进空状态，添加目录后能扫出模型；重启后自动加载上次模型，文件被删时给提示且不影响启动
+- [x] 扫描 200 个 gguf 目录 < 3s，UI 不冻结（实测 163 ms）
+- [x] 首次启动无目录时进空状态，添加目录后能扫出模型；重启后自动加载上次模型，文件被删时给提示且不影响启动
 - [ ] SmolLM2-135M（Q8_0）加载、流式输出、取消与上下文裁剪全部通过（秒级迭代的基准模型）
-- [ ] WeVisOne-VL-2B（Q4_K_S + mmproj-f16）在 CUDA12 下加载成功，`SupportsVision == true`，GPU 层数修改后重新加载生效
+- [x] WeVisOne-VL-2B（Q4_K_S + mmproj-f16）在 CUDA12 下加载成功，`SupportsVision == true`，GPU 层数修改后重新加载生效
 - [ ] 同一模型在 Vulkan 后端下也能加载并完成一次图片推理
 - [ ] 连续 20 轮对话无内存持续增长、无 UI 卡顿（拖动窗口仍流畅）
-- [ ] 公式与图表：`$\frac{a}{b}$`、`$$…$$` 与 ```` ```mermaid graph TD ```` 各渲染一次，配色跟浅色主题，流式结束后无闪烁
-- [ ] 窗口渲染未受 SkiaSharp 4.153.1 影响（无 MissingMethodException、无黑块）
+- [x] 公式与图表：`$\frac{a}{b}$`、`$$…$$` 与 ```` ```mermaid graph TD ```` 各渲染一次，配色跟浅色主题，流式结束后无闪烁
+- [x] 窗口渲染未受 SkiaSharp 4.153.1 影响（无 MissingMethodException、无黑块）
 - [ ] 「携带历史」能记住上一轮信息；「每次全新」在同一会话内不携带上一轮
-- [ ] 停止生成后已输出内容保留且可继续提问
-- [ ] 关闭应用再打开，会话列表与消息完整恢复
+- [x] 停止生成后已输出内容保留且可继续提问
+- [x] 关闭应用再打开，会话列表与消息完整恢复
 - [ ] 显存不足时给出中文可读提示，不崩溃
 - [ ] 所选后端初始化失败时报错并可重新选择，不静默降级到 CPU
 - [ ] 坐标样例：2B 对一张图输出框，界面框与图对齐；窗口缩放、图片长宽比变化后仍对齐

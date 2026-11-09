@@ -1,5 +1,9 @@
 using BonsaiLLM.App.ViewModels;
 using BonsaiLLM.Core.Chat;
+using BonsaiLLM.Core.Models;
+using BonsaiLLM.Core.Sessions;
+using BonsaiLLM.Core.Settings;
+using BonsaiLLM.Llama;
 
 namespace BonsaiLLM.App;
 
@@ -10,9 +14,18 @@ public sealed class AppServices
 
     private AppServices()
     {
-        ChatEngine = new DemoChatEngine();
-        MainViewModel = new MainWindowViewModel(ChatEngine);
+        SettingsStore = new SettingsStore();
+        SessionStore = new SessionStore();
+        Catalog = new ModelCatalog();
+        ChatEngine = new LlamaChatEngine();
+        MainViewModel = new MainWindowViewModel(ChatEngine, Catalog, SettingsStore, SessionStore);
     }
+
+    public SettingsStore SettingsStore { get; }
+
+    public SessionStore SessionStore { get; }
+
+    public IModelCatalog Catalog { get; }
 
     public IChatEngine ChatEngine { get; }
 

@@ -47,6 +47,12 @@ flowchart LR
 
     public bool IsLoaded => true;
 
+    public int ContextSize => 4096;
+
+    public int ContextTokensUsed => 0;
+
+    public int CountTokens(string text) => TokenEstimator.Estimate(text);
+
     public Task LoadAsync(
         ModelDescriptor model,
         ModelLoadOptions options,

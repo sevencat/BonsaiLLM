@@ -4,6 +4,8 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
 using BonsaiLLM.App.Views;
+using MarkView.Avalonia;
+using MarkView.Avalonia.Extensions;
 
 namespace BonsaiLLM.App;
 
@@ -15,6 +17,9 @@ public partial class App : Application
     {
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
         {
+            // 代码块语法高亮（TextMate、Light+ 配色）；放在建窗口之前，所有 viewer 都生效
+            MarkdownViewerDefaults.Extensions.AddTextMateHighlighting();
+
             var services = AppServices.Initialize();
 
             var window = new MainWindow { DataContext = services.MainViewModel };

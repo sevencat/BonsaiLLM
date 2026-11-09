@@ -37,7 +37,7 @@
 | Material.Avalonia.Dialogs | 不引 | 设置用页面/侧栏，确认用自绘遮罩层，不弹系统对话框（除文件选择用 `StorageProvider`） |
 | Material.Avalonia.DataGrid | 不引 | 会话/模型列表用 `ItemsControl` + `ListBox` |
 | Material.Avalonia.TreeDataGrid | 不引 | 同上 |
-| MarkView.Avalonia.SyntaxHighlighting | 暂缓 | 一期先用 MarkView 内置代码块样式；等 M6 体验打磨时按需加 |
+| MarkView.Avalonia.SyntaxHighlighting | 一期加 | TextMate 语法高亮，启动时 `MarkdownViewerDefaults.Extensions.AddTextMateHighlighting()` 全局注册；代码块带语言标签与复制按钮 |
 | MarkView.Avalonia.Math | 一期加 | 公式常见；CSharpMath 纯 .NET 渲染，无 WebView。把 SkiaSharp 抬到 4.153.1 |
 | MarkView.Avalonia.Mermaid | 一期加 | mermaid 围栏 → SVG → 栅格化，纯 .NET；额外带 Mermaider + `Svg.Controls.Skia.Avalonia` |
 | MarkView.Avalonia.Svg | 暂缓 | 只在要显示远程/文件 SVG 图片时才需要 |
@@ -210,7 +210,27 @@
 - 会话搜索
 - 流式语音朗读（本地 TTS）
 
-## 13. 许可证
+## 13. M1–M2 实现记录（与计划的偏差）
+
+- **后端初始化时机**：计划写 `Program.Main` 最前，但后端是用户在设置里选的，首次启动还没有值。实际做法是在第一次加载模型时调 `LlamaBackend.Configure`；`NativeLibraryConfig` 进程内只能配一次，之后再改后端会提示重启。失败抛 `BackendUnavailableException`，UI 打开设置页要求重选。
+- **Vulkan 查询没做**：非 NVIDIA 机器直接按 8 GB 保守估算并标注「（估算）」。Vulkan 枚举显存要额外 P/Invoke，一期不值得，nvidia-smi 覆盖主力场景。
+- **GGUF 内嵌 chat template 不执行**：固定 ChatML（`<|im_start|>` / `<|im_end|>`），Qwen3-VL、SmolLM2、WeVisOne 实测同款标记。执行 Jinja 需要额外模板引擎，等真遇到不兼容模型再补。
+- **`--selfcheck` 保留**：以假数据引擎跑一遍 Markdown 渲染链路，跳过设置读取与扫描，用于无模型时的 UI 冒烟。
+- **扫描性能实测**：200 个 GGUF 头部解析 163 ms（本机 SSD），扫描在后台线程，UI 不冻结。
+
+## 14. M3–M6 实现记录
+
+- **会话持久化**：`ChatSession` / `SessionStore` 放 `BonsaiLLM.Core.Sessions`，一会话一文件 `%AppData%\BonsaiLLM\sessions\{id}.json`，写入走"临时文件 + `File.Replace`"。标题取首条 user 消息前 24 字。
+- **上下文占用要区分两种值**：`UsageInfo` 里的 prompt/completion 是**本轮**用量；顶栏「上下文 已用/总量」用 `IChatEngine.ContextTokensUsed`，即 KV cache 里的累计值（引擎在 `StreamAsync` 的 finally 里累加，重开上下文时清零）。切换会话后引擎还没重建，此时按当前会话消息重新估算（`EstimateContextTokens`），否则会显示上一个会话的数字。
+- **裁剪**：`BuildRequestHistory` 从最新一条往前累加，超出 `contextSize - maxTokens(缺省 1024) - 128` 就丢最旧的，并保证请求以 user 开头；`StatsText` 追加「已裁剪 N 条」。实测把 profile 的 `contextSize` 临时改 1024 后，12 条历史被裁掉 4 条，界面仍显示完整历史。
+- **生成中切换会话**：`StreamAssistantAsync` 开头固定住发起时的 `_session`，收尾写盘、追加消息都用这个局部变量，避免取消后把旧回复追加到新会话。
+- **消息操作**：助手消息下方「复制 / 重新生成 / 删除」。Avalonia 12 的剪贴板是 `IClipboard.SetDataAsync(IAsyncDataTransfer)`：`new DataTransfer()` + `DataTransferItem.CreateText(text)`；`DataTransfer` 在 `Avalonia.Input`。旧的 `SetTextAsync` 只在 `ClipboardExtensions` 里，容易误判成 API 被删。`OnCopyMessage` 用 try/catch 把失败写进状态栏，不再静默返回。
+- **重新生成只允许最后一轮**：删中间那条再追加到末尾会把历史顺序打乱，命中非最后一条时只提示「只能重新生成最后一条回复」。
+- **语法高亮**：加 `MarkView.Avalonia.SyntaxHighlighting 12.4.*`，在 `App.axaml.cs` 建窗口前 `MarkdownViewerDefaults.Extensions.AddTextMateHighlighting()`（全局默认，Light+ 主题）。自检截图里 C# 代码块的 `var`/`new`/注释已按 token 着色。
+- **快捷键**：`Ctrl+Enter` 发送、`Esc` 停止生成（无生成时关闭设置）、`Ctrl+N` 新会话、`Ctrl+,` 设置、`Ctrl+R` 重新扫描。
+- **截图验证脚本**：`C:\Users\Public\bonsai-shot.ps1`（临时，不入库），用 `PrintWindow` + `SendKeys` 自动截图；`-ClickX/-ClickY` 按窗口比例点击。测按钮坐标别靠肉眼估：把图放大后用像素扫描（找主色按钮块）定位更准，之前 y 差 20px 就整轮点空。
+
+## 15. 许可证
 
 - Avalonia / Material.Avalonia / MarkView.Avalonia / LLamaSharp：均为 MIT，可商用。
 - llama.cpp 原生库：MIT。

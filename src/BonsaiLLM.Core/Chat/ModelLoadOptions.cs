@@ -1,3 +1,5 @@
+using BonsaiLLM.Core.Settings;
+
 namespace BonsaiLLM.Core.Chat;
 
 /// <summary>加载模型时的参数（已合并全局默认与单模型覆盖）。</summary>
@@ -16,4 +18,7 @@ public sealed record ModelLoadOptions
     public string KvCacheType { get; init; } = "f16";
 
     public bool LoadVisionProjector { get; init; } = true;
+
+    /// <summary>本次加载使用的原生后端；一个进程只能固定一个。</summary>
+    public BackendKind Backend { get; init; } = BackendKind.Cuda12;
 }
