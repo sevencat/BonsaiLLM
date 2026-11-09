@@ -1,7 +1,9 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Channels;
 using BonsaiLLM.Core.Chat;
+using BonsaiLLM.Core.Diagnostics;
 using BonsaiLLM.Core.Models;
 using BonsaiLLM.Core.Settings;
 using LLama;
@@ -19,6 +21,9 @@ namespace BonsaiLLM.Llama;
 public sealed class LlamaChatEngine : IChatEngine
 {
     private static readonly string[] AntiPrompts = ["<|im_end|>", "<|endoftext|>", "<|eot_id|>"];
+
+    /// <summary>图片占用的 token 数只能估：不同分辨率差异很大，按 1024 保守预留。</summary>
+    private const int ImageTokenEstimate = 1024;
 
     private readonly SemaphoreSlim _gate = new(1, 1);
 
@@ -57,6 +62,7 @@ public sealed class LlamaChatEngine : IChatEngine
         CancellationToken cancellationToken)
     {
         await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var stopwatch = Stopwatch.StartNew();
         try
         {
             UnloadCore();
@@ -65,6 +71,10 @@ public sealed class LlamaChatEngine : IChatEngine
             {
                 throw new ModelLoadException($"模型文件不存在：{model.Path}");
             }
+
+            AppLog.Info(
+                $"开始加载 {model.DisplayName}（{model.Quantization}）· 后端 {options.Backend} · "
+                + $"{options.GpuLayerCount} 层上 GPU · 上下文 {options.ContextSize}");
 
             LlamaBackend.Configure(options.Backend);
 
@@ -137,9 +147,14 @@ public sealed class LlamaChatEngine : IChatEngine
             _fed.Clear();
             _loaded = model;
             progress?.Report(1f);
+
+            AppLog.Info(
+                $"{model.DisplayName} 加载完成，用时 {stopwatch.Elapsed.TotalSeconds:0.0}s，"
+                + $"上下文 {ContextSize}，视觉投影 {(_vision is null ? "未启用" : "已启用")}");
         }
-        catch
+        catch (Exception ex)
         {
+            AppLog.Error($"加载 {model.DisplayName} 失败", ex);
             UnloadCore();
             throw;
         }
@@ -176,8 +191,10 @@ public sealed class LlamaChatEngine : IChatEngine
         if (!IsPrefixOfFed(history))
         {
             ResetExecutorCore();
+            AppLog.Info("历史与 KV cache 不一致，已重建上下文");
         }
 
+        var reusedMessages = _fed.Count;
         var newMessages = history.Skip(_fed.Count).ToList();
         if (newMessages.Count == 0)
         {
@@ -185,12 +202,42 @@ public sealed class LlamaChatEngine : IChatEngine
             yield break;
         }
 
-        var prompt = ChatPromptBuilder.BuildPrompt(newMessages);
+        var imageBytes = options.ImageBytes is { Length: > 0 } ? options.ImageBytes : null;
+        if (imageBytes is not null && _vision is null)
+        {
+            throw new InvalidOperationException("当前模型没有启用视觉投影，无法发送图片。");
+        }
+
+        var prompt = ChatPromptBuilder.BuildPrompt(newMessages, withMedia: imageBytes is not null);
         var promptTokens = SafeCountTokens(_context, prompt);
+        if (imageBytes is not null)
+        {
+            promptTokens += ImageTokenEstimate;
+        }
+
+        AppLog.Info(
+            $"发送请求：新增 {newMessages.Count} 条消息，预填充 {promptTokens} token（KV 复用 {reusedMessages} 条）"
+            + (imageBytes is not null ? $"，附带图片 {imageBytes.Length / 1024} KB" : ""));
+
+        var inferStopwatch = Stopwatch.StartNew();
+
+        // 预填充完剩下的空间才决定能生成多少：照搬 MaxTokens 会在生成中途撞上下文上限硬报错
+        var room = Math.Max(0, ContextSize - _usedTokens - promptTokens);
+        var maxTokens = options.MaxTokens > 0 ? options.MaxTokens : -1;
+        if (room <= 64)
+        {
+            AppLog.Warn($"上下文只剩 {room} token，本次最多生成 8 token（可清空会话或调大上下文）");
+            maxTokens = 8;
+        }
+        else if (maxTokens < 0 || maxTokens > room - 32)
+        {
+            maxTokens = room - 32;
+            AppLog.Info($"按剩余上下文把生成长度压到 {maxTokens} token");
+        }
 
         var inference = new InferenceParams
         {
-            MaxTokens = options.MaxTokens > 0 ? options.MaxTokens : -1,
+            MaxTokens = maxTokens,
             AntiPrompts = AntiPrompts,
             DecodeSpecialTokens = true,
             SamplingPipeline = new DefaultSamplingPipeline
@@ -213,8 +260,15 @@ public sealed class LlamaChatEngine : IChatEngine
         _ = Task.Run(
             async () =>
             {
+                // 图片必须在 tokenize（InferAsync 内部）之前挂起，生成结束后再清理
+                SafeMtmdEmbed? media = null;
                 try
                 {
+                    if (imageBytes is not null)
+                    {
+                        media = _vision!.LoadMedia(imageBytes);
+                    }
+
                     await foreach (var piece in executor.InferAsync(prompt, inference, cancellationToken).ConfigureAwait(false))
                     {
                         await channel.Writer.WriteAsync(piece, cancellationToken).ConfigureAwait(false);
@@ -224,7 +278,16 @@ public sealed class LlamaChatEngine : IChatEngine
                 }
                 catch (Exception ex)
                 {
+                    AppLog.Error("推理过程中出错", ex);
                     channel.Writer.TryComplete(ex);
+                }
+                finally
+                {
+                    if (media is not null)
+                    {
+                        _vision?.ClearMedia();
+                        media.Dispose();
+                    }
                 }
             },
             CancellationToken.None);
@@ -248,7 +311,13 @@ public sealed class LlamaChatEngine : IChatEngine
             // 停到一半也要记账，否则下一轮 diff 会从头重建
             _fed.AddRange(newMessages);
             _fed.Add(new ChatMessage(ChatRole.Assistant, answer.ToString()));
-            _usedTokens += promptTokens + SafeCountTokens(_context, answer.ToString());
+            var generated = SafeCountTokens(_context, answer.ToString());
+            _usedTokens += promptTokens + generated;
+
+            var seconds = inferStopwatch.Elapsed.TotalSeconds;
+            AppLog.Info(
+                $"本轮结束：生成 {generated} token，用时 {seconds:0.0}s"
+                + (seconds > 0 && generated > 0 ? $"，{generated / seconds:0.0} tok/s" : ""));
         }
 
         yield return ChatDelta.Done(

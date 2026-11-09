@@ -117,7 +117,7 @@
     </Border>
 
     <!-- 右侧主区 -->
-    <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
+    <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto,Auto">
 
       <!-- 顶栏：状态 / 模型选择 / 上下文模式 / 操作 -->
       <Border Grid.Row="0" Padding="20,12" BorderThickness="0,0,0,1" BorderBrush="#E5E7EB">
@@ -146,6 +146,7 @@
 
             <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
               <Button Content="重新扫描" Command="{Binding RescanCommand}" />
+              <Button Content="日志" Command="{Binding ToggleLogCommand}" ToolTip.Tip="查看运行日志" />
               <Button Content="设置" Command="{Binding ToggleSettingsCommand}" />
             </StackPanel>
           </Grid>
@@ -180,8 +181,15 @@
 
       <!-- 对话区 -->
       <Grid Grid.Row="1" IsVisible="{Binding !IsEmptyVisible}">
-        <ScrollViewer Name="ChatScroll" Padding="20,12" ScrollChanged="OnChatScrollChanged">
+        <ScrollViewer Name="ChatScroll"
+                      Padding="20,12"
+                      ScrollChanged="OnChatScrollChanged">
           <ItemsControl ItemsSource="{Binding Messages}">
+            <ItemsControl.ItemsPanel>
+              <ItemsPanelTemplate>
+                <VirtualizingStackPanel />
+              </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
               <DataTemplate x:DataType="vm:ChatMessageViewModel">
                 <StackPanel>
@@ -199,6 +207,12 @@
                             FontSize="11"
                             Padding="8,1"
                             Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RegenerateCommand}"
+                            CommandParameter="{Binding}" />
+                    <Button Content="导出标注图"
+                            FontSize="11"
+                            Padding="8,1"
+                            IsVisible="{Binding ShowDetection}"
+                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SaveDetectionImageCommand}"
                             CommandParameter="{Binding}" />
                     <Button Content="删除"
                             FontSize="11"
@@ -256,27 +270,122 @@
         </StackPanel>
       </Border>
 
-      <!-- 输入区 -->
-      <Border Grid.Row="2" Classes="composer">
-        <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
-          <TextBox Grid.Column="0"
-                   Name="Composer"
-                   Text="{Binding InputText}"
-                   PlaceholderText="输入消息，回车发送"
-                   AcceptsReturn="False"
-                   IsEnabled="{Binding CanChat}"
-                   KeyDown="OnInputKeyDown" />
+      <!-- 日志抽屉 -->
+      <Border Grid.Row="2"
+              Name="LogDrawer"
+              IsVisible="{Binding IsLogOpen}"
+              Height="190"
+              Background="#FBFBFC"
+              BorderThickness="0,1,0,0"
+              BorderBrush="#E5E7EB">
+        <Grid RowDefinitions="Auto,*" Margin="16,8,16,10">
+          <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Text="运行日志"
+                       FontWeight="SemiBold"
+                       FontSize="12"
+                       VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding LogSummary}"
+                       Classes="muted"
+                       VerticalAlignment="Center" />
+            <Button Grid.Column="2"
+                    Content="复制"
+                    FontSize="11"
+                    Padding="10,2"
+                    Command="{Binding CopyLogsCommand}" />
+            <Button Grid.Column="3"
+                    Content="清空"
+                    FontSize="11"
+                    Padding="10,2"
+                    Command="{Binding ClearLogsCommand}" />
+            <Button Grid.Column="4"
+                    Content="关闭"
+                    FontSize="11"
+                    Padding="10,2"
+                    Command="{Binding CloseLogCommand}" />
+          </Grid>
 
-          <Button Grid.Column="1"
-                  Content="发送"
-                  Command="{Binding SendCommand}"
-                  IsVisible="{Binding !IsStreaming}" />
-
-          <Button Grid.Column="2"
-                  Content="停止"
-                  Command="{Binding StopCommand}"
-                  IsVisible="{Binding IsStreaming}" />
+          <ScrollViewer Grid.Row="1" Name="LogScroll" Margin="0,6,0,0">
+            <ItemsControl ItemsSource="{Binding Logs}">
+              <ItemsControl.ItemTemplate>
+                <DataTemplate x:DataType="vm:LogEntryViewModel">
+                  <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,1">
+                    <TextBlock Text="{Binding TimeText}"
+                               FontFamily="Consolas,monospace"
+                               FontSize="11"
+                               Foreground="#9CA3AF" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding LevelText}"
+                               FontFamily="Consolas,monospace"
+                               FontSize="11"
+                               Foreground="{Binding Foreground}" />
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding Message}"
+                               FontFamily="Consolas,monospace"
+                               FontSize="11"
+                               TextWrapping="Wrap"
+                               Foreground="{Binding Foreground}" />
+                  </Grid>
+                </DataTemplate>
+              </ItemsControl.ItemTemplate>
+            </ItemsControl>
+          </ScrollViewer>
         </Grid>
+      </Border>
+
+      <!-- 输入区 -->
+      <Border Grid.Row="3" Classes="composer">
+        <StackPanel Spacing="8">
+          <!-- 待发送图片 -->
+          <Border IsVisible="{Binding HasPendingImage}"
+                  Background="#F3F4F6"
+                  CornerRadius="8"
+                  Padding="8">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
+              <Image Source="{Binding PendingImage}"
+                     MaxWidth="120"
+                     MaxHeight="72"
+                     Stretch="Uniform"
+                     VerticalAlignment="Center" />
+              <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                <TextBlock Text="待发送图片" FontSize="12" FontWeight="SemiBold" />
+                <TextBlock Text="{Binding PendingImageHint}" Classes="muted" FontSize="11" />
+              </StackPanel>
+              <Button Grid.Column="2"
+                      Content="移除"
+                      FontSize="11"
+                      Padding="10,2"
+                      VerticalAlignment="Center"
+                      Command="{Binding RemovePendingImageCommand}" />
+            </Grid>
+          </Border>
+
+          <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
+            <Button Grid.Column="0"
+                    Content="图片"
+                    Command="{Binding AttachImageCommand}"
+                    IsEnabled="{Binding CanAttachImage}"
+                    ToolTip.Tip="选择图片（需要带视觉投影的模型）" />
+
+            <TextBox Grid.Column="1"
+                     Name="Composer"
+                     Text="{Binding InputText}"
+                     PlaceholderText="输入消息，回车发送"
+                     AcceptsReturn="False"
+                     IsEnabled="{Binding CanChat}"
+                     KeyDown="OnInputKeyDown" />
+
+            <Button Grid.Column="2"
+                    Content="发送"
+                    Command="{Binding SendCommand}"
+                    IsVisible="{Binding !IsStreaming}" />
+
+            <Button Grid.Column="3"
+                    Content="停止"
+                    Command="{Binding StopCommand}"
+                    IsVisible="{Binding IsStreaming}" />
+          </Grid>
+        </StackPanel>
       </Border>
     </Grid>
 
@@ -326,6 +435,21 @@
                      TextWrapping="Wrap"
                      Height="80"
                      PlaceholderText="加载模型后可编辑，保存到该模型的配置里" />
+
+            <TextBlock Text="特化（坐标标注）" Classes="section" />
+            <CheckBox Content="启用特化：命中的模型按检测协议解析坐标"
+                      IsChecked="{Binding SpecializationEnabled}" />
+            <TextBox Text="{Binding SpecializedModelNamesText}"
+                     PlaceholderText="WeVisOne" />
+            <TextBlock Text="模型文件名包含任一关键词（逗号分隔）即视为检测模型；发送图片时按 referring 模板请求。"
+                       Classes="muted"
+                       FontSize="11"
+                       TextWrapping="Wrap" />
+            <TextBlock Text="当前模型已命中特化，附图后会按坐标渲染。"
+                       Foreground="#047857"
+                       FontSize="11"
+                       Margin="0,2,0,0"
+                       IsVisible="{Binding IsSpecializationActive}" />
 
             <TextBlock Text="当前模型参数" Classes="section" />
             <Grid ColumnDefinitions="*,12,*"

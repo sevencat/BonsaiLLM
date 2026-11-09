@@ -1,7 +1,12 @@
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Text;
+using Avalonia.Media.Imaging;
+using Avalonia.Threading;
+using BonsaiLLM.App.Services;
 using BonsaiLLM.Core.Chat;
+using BonsaiLLM.Core.Detection;
+using BonsaiLLM.Core.Diagnostics;
 using BonsaiLLM.Core.Hardware;
 using BonsaiLLM.Core.Models;
 using BonsaiLLM.Core.Sessions;
@@ -61,6 +66,7 @@ public partial class MainWindowViewModel : ObservableObject
         SelectedBackend = BackendOptions.FirstOrDefault(option => option.Kind == _settings.Backend);
         SelectedContextMode = ContextModeOptions.First(option => option.Mode == _settings.DefaultContextMode);
         _fontSize = _settings.FontSize;
+        _specializedModelNamesText = string.Join("，", _settings.SpecializedModelNames);
 
         foreach (var directory in _settings.ModelDirectories)
         {
@@ -80,6 +86,14 @@ public partial class MainWindowViewModel : ObservableObject
             UpdateEmptyState();
         };
 
+        // 日志抽屉：先补齐进程里已有的记录，再接增量
+        foreach (var entry in AppLog.Snapshot())
+        {
+            Logs.Add(new LogEntryViewModel(entry));
+        }
+
+        AppLog.Appended += OnAppLogAppended;
+
         UpdateEmptyState();
     }
 
@@ -91,12 +105,24 @@ public partial class MainWindowViewModel : ObservableObject
 
     public ObservableCollection<SessionItemViewModel> Sessions { get; } = [];
 
+    /// <summary>日志抽屉的展示数据，随 <see cref="AppLog"/> 增量追加，最多留 <see cref="AppLog.Capacity"/> 条。</summary>
+    public ObservableCollection<LogEntryViewModel> Logs { get; } = [];
+
     public IReadOnlyList<BackendOption> BackendOptions { get; }
 
     public IReadOnlyList<ContextModeOption> ContextModeOptions { get; }
 
     /// <summary>由窗口注入的目录选择器，避免 ViewModel 直接依赖 StorageProvider。</summary>
     public Func<Task<string?>>? DirectoryPicker { get; set; }
+
+    /// <summary>由窗口注入的图片选择器。</summary>
+    public Func<Task<string?>>? ImagePicker { get; set; }
+
+    /// <summary>由窗口注入的图片保存器（字节 + 建议文件名，返回是否已保存）。</summary>
+    public Func<byte[], string, Task<bool>>? ImageSaver { get; set; }
+
+    /// <summary>由窗口注入的剪贴板写入器，供「复制日志」使用。</summary>
+    public Func<string, Task>? ClipboardWriter { get; set; }
 
     /// <summary>流式内容增长时触发，供窗口把滚动条跟到底部。</summary>
     public event EventHandler? StreamingContentUpdated;
@@ -116,6 +142,8 @@ public partial class MainWindowViewModel : ObservableObject
     public bool ShowReadyHint => !IsEmptyVisible && Messages.Count == 0 && CanChat;
 
     public bool IsDemoMode => _useDemo;
+
+    public string LogSummary => Logs.Count == 0 ? "暂无记录" : $"共 {Logs.Count} 条（最多保留 {AppLog.Capacity} 条）";
 
     public bool IsSessionEmpty => Messages.Count == 0;
 
@@ -139,6 +167,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isSettingsOpen;
+
+    [ObservableProperty]
+    private bool _isLogOpen;
 
     [ObservableProperty]
     private string _settingsNotice = string.Empty;
@@ -194,6 +225,63 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private double _fontSize = 14;
 
+    /// <summary>待发送图片的预览（已按最长边 1600 缩放）。</summary>
+    [ObservableProperty]
+    private Bitmap? _pendingImage;
+
+    [ObservableProperty]
+    private string _pendingImageHint = string.Empty;
+
+    [ObservableProperty]
+    private string _specializedModelNamesText = string.Empty;
+
+    private byte[]? _pendingImageBytes;
+
+    public bool HasPendingImage => PendingImage is not null;
+
+    /// <summary>当前模型是否走 WeVisOne 特化（按模型名匹配，不按架构猜）。</summary>
+    public bool IsSpecializationActive =>
+        SelectedModel is { Descriptor.HasVision: true } model
+        && _settings.NeedsSpecialization(model.Descriptor.DisplayName);
+
+    /// <summary>只有带视觉投影的模型才允许附图。</summary>
+    public bool CanAttachImage => CanChat && !IsStreaming && SelectedModel is { Descriptor.HasVision: true };
+
+    partial void OnPendingImageChanged(Bitmap? value)
+    {
+        OnPropertyChanged(nameof(HasPendingImage));
+        SendCommand.NotifyCanExecuteChanged();
+    }
+
+    public bool SpecializationEnabled
+    {
+        get => _settings.SpecializationEnabled;
+        set
+        {
+            if (_settings.SpecializationEnabled == value)
+            {
+                return;
+            }
+
+            _settings.SpecializationEnabled = value;
+            SaveSettings();
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(IsSpecializationActive));
+            StatusText = value ? "已开启特化：命中的模型会尝试坐标检测" : "已关闭特化，坐标按普通文本显示";
+        }
+    }
+
+    partial void OnSpecializedModelNamesTextChanged(string value)
+    {
+        var names = value
+            .Split([',', '，', ';', '；', ' ', '、'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        _settings.SpecializedModelNames = names.Count == 0 ? ["WeVisOne"] : names;
+        OnPropertyChanged(nameof(IsSpecializationActive));
+    }
+
     partial void OnFontSizeChanged(double value)
     {
         var size = (int)Math.Round(Math.Clamp(value, 12, 20));
@@ -217,11 +305,13 @@ public partial class MainWindowViewModel : ObservableObject
         SendCommand.NotifyCanExecuteChanged();
         StopCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanChat));
+        OnPropertyChanged(nameof(CanAttachImage));
     }
 
     partial void OnIsBusyChanged(bool value)
     {
         OnPropertyChanged(nameof(CanChat));
+        OnPropertyChanged(nameof(CanAttachImage));
         OnPropertyChanged(nameof(ShowReadyHint));
     }
 
@@ -230,6 +320,8 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnSelectedModelChanged(ModelItemViewModel? value)
     {
         OnPropertyChanged(nameof(HasModel));
+        OnPropertyChanged(nameof(IsSpecializationActive));
+        OnPropertyChanged(nameof(CanAttachImage));
 
         if (_suppressModelSelection || value is null)
         {
@@ -397,6 +489,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         _session = session;
         ReloadMessages();
+        AppLog.Info($"切换到会话《{session.Title}》，{session.Messages.Count} 条消息");
 
         var option = ContextModeOptions.First(item => item.Mode == session.ContextMode);
         if (!ReferenceEquals(SelectedContextMode, option))
@@ -423,12 +516,49 @@ public partial class MainWindowViewModel : ObservableObject
             return;
         }
 
-        foreach (var stored in _session.Messages)
+        for (var index = 0; index < _session.Messages.Count; index++)
         {
-            Messages.Add(new ChatMessageViewModel(stored.Role, stored.Text));
+            var stored = _session.Messages[index];
+            var message = new ChatMessageViewModel(stored.Role, stored.Text);
+
+            if (stored.ImageFile is not null)
+            {
+                message.AttachImage(_sessionStore.TryReadImage(stored.ImageFile));
+            }
+            else if (stored.IsDetection)
+            {
+                // 检测消息本身不存图，源图在前一条带图消息上
+                message.AttachImage(FindSourceImage(index));
+            }
+
+            if (stored.IsDetection)
+            {
+                message.ApplyDetection(WeVisOneParser.Parse(stored.Text));
+            }
+
+            Messages.Add(message);
         }
 
         UpdateEmptyState();
+    }
+
+    /// <summary>向前找最近一条带图消息的图片，用于检测结果的叠加显示。</summary>
+    private byte[]? FindSourceImage(int messageIndex)
+    {
+        if (_session is null)
+        {
+            return null;
+        }
+
+        for (var i = messageIndex - 1; i >= 0; i--)
+        {
+            if (_session.Messages[i].ImageFile is { } file)
+            {
+                return _sessionStore.TryReadImage(file);
+            }
+        }
+
+        return null;
     }
 
     private SessionItemViewModel CreateSession()
@@ -455,15 +585,24 @@ public partial class MainWindowViewModel : ObservableObject
         return item;
     }
 
-    private bool CanSend() => CanChat && !IsStreaming && !string.IsNullOrWhiteSpace(InputText);
+    private bool CanSend() =>
+        CanChat && !IsStreaming && (!string.IsNullOrWhiteSpace(InputText) || HasPendingImage);
 
     [RelayCommand(CanExecute = nameof(CanSend))]
     private async Task SendAsync()
     {
         var text = InputText.Trim();
+        var imageBytes = _pendingImageBytes;
+
         if (text.Length == 0)
         {
-            return;
+            if (imageBytes is null)
+            {
+                return;
+            }
+
+            // 只发图片时给一个默认描述，特化场景下这就是检测目标
+            text = IsSpecializationActive ? "object" : "请描述这张图片。";
         }
 
         if (!CanChat)
@@ -477,16 +616,128 @@ public partial class MainWindowViewModel : ObservableObject
             CreateSession();
         }
 
+        var detection = imageBytes is not null && IsSpecializationActive;
+        string? imageFile = null;
+        if (imageBytes is not null)
+        {
+            imageFile = _sessionStore.TrySaveImage(imageBytes);
+            if (imageFile is null && _sessionStore.LastError is { } imageError)
+            {
+                // 图片存不下来也允许发这一轮，只是重启后看不到图
+                StatusText = imageError;
+                AppLog.Warn(imageError);
+            }
+        }
+
         InputText = string.Empty;
-        _session!.Messages.Add(new StoredMessage { Role = ChatRole.User, Text = text });
-        Messages.Add(new ChatMessageViewModel(ChatRole.User, text));
+        ClearPendingImageCore();
+
+        _session!.Messages.Add(new StoredMessage
+        {
+            Role = ChatRole.User,
+            Text = text,
+            ImageFile = imageFile,
+        });
+
+        var user = new ChatMessageViewModel(ChatRole.User, text);
+        user.AttachImage(imageBytes);
+        Messages.Add(user);
+
+        AppLog.Info(
+            $"用户提问（{text.Length} 字）"
+            + (imageBytes is null ? "" : $"，附图片 {imageBytes.Length / 1024} KB")
+            + $"：{MakeTitle(text)}");
 
         if (_session.Messages.Count == 1)
         {
             _session.Title = MakeTitle(text);
         }
 
-        await (_generation = StreamAssistantAsync());
+        StatusText = detection ? "正在检测目标…" : "正在生成…";
+
+        await (_generation = StreamAssistantAsync(imageBytes, detection));
+    }
+
+    [RelayCommand]
+    private async Task AttachImageAsync()
+    {
+        if (ImagePicker is null)
+        {
+            return;
+        }
+
+        if (!CanAttachImage)
+        {
+            StatusText = SelectedModel is null
+                ? "请先加载模型"
+                : "当前模型没有视觉投影，无法发送图片";
+            return;
+        }
+
+        var path = await ImagePicker();
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return;
+        }
+
+        try
+        {
+            var raw = await File.ReadAllBytesAsync(path);
+            var prepared = await Task.Run(() => ImagePreprocessor.Prepare(raw));
+
+            PendingImage = new Bitmap(new MemoryStream(prepared.JpegBytes));
+            PendingImageHint =
+                $"{prepared.Width}×{prepared.Height} · {prepared.JpegBytes.Length / 1024} KB";
+            _pendingImageBytes = prepared.JpegBytes;
+            StatusText = IsSpecializationActive
+                ? "图片已就绪；输入要检测的目标（如 person）后发送"
+                : "图片已就绪，发送时会一起带给模型";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"读取图片失败：{ex.Message}";
+            AppLog.Error("读取图片失败", ex);
+        }
+    }
+
+    [RelayCommand]
+    private void RemovePendingImage()
+    {
+        ClearPendingImageCore();
+        StatusText = "已移除待发送图片";
+    }
+
+    private void ClearPendingImageCore()
+    {
+        PendingImage = null;
+        PendingImageHint = string.Empty;
+        _pendingImageBytes = null;
+    }
+
+    /// <summary>把检测框烧进原图并交给窗口保存。</summary>
+    [RelayCommand]
+    private async Task SaveDetectionImageAsync(ChatMessageViewModel? message)
+    {
+        if (message?.ImageBytes is null || ImageSaver is null)
+        {
+            StatusText = "这条消息没有可导出的图片";
+            return;
+        }
+
+        try
+        {
+            var bytes = DetectionImageExporter.Render(message.ImageBytes, message.Boxes);
+            var name = string.IsNullOrWhiteSpace(message.DetectionLabel)
+                ? "detection.png"
+                : $"{message.DetectionLabel}-detection.png";
+            var saved = await ImageSaver(bytes, name);
+            StatusText = saved ? "标注图已保存" : "已取消保存";
+        }
+        catch (Exception ex)
+        {
+            StatusText = $"导出标注图失败：{ex.Message}";
+            AppLog.Error("导出标注图失败", ex);
+        }
     }
 
     /// <summary>当前正在跑的生成任务，供清空/删除会话时等它收尾。</summary>
@@ -508,7 +759,7 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     /// <summary>在历史末尾生成一条助手回复（发送与重新生成共用）。</summary>
-    private async Task StreamAssistantAsync()
+    private async Task StreamAssistantAsync(byte[]? imageBytes = null, bool isDetection = false)
     {
         // 生成过程中可能切换会话：固定住发起时的会话，回复只写回它，
         // 否则取消后收尾会把旧回复追加到新会话里。
@@ -533,7 +784,8 @@ public partial class MainWindowViewModel : ObservableObject
         try
         {
             var history = BuildRequestHistory(session, out trimmed);
-            await foreach (var delta in ActiveEngine.StreamAsync(history, BuildChatOptions(), _cts.Token))
+            await foreach (var delta in ActiveEngine.StreamAsync(
+                               history, BuildChatOptions(imageBytes), _cts.Token))
             {
                 if (delta.IsDone)
                 {
@@ -563,14 +815,31 @@ public partial class MainWindowViewModel : ObservableObject
         catch (OperationCanceledException)
         {
             assistant.Append("\n\n_（已停止）_");
+            AppLog.Info("生成已停止");
         }
         catch (Exception ex)
         {
             assistant.Append($"\n\n> {DescribeError(ex)}");
+            AppLog.Error("本轮生成失败", ex);
         }
         finally
         {
             stopwatch.Stop();
+
+            if (isDetection)
+            {
+                var raw = answer.ToString();
+                AppLog.Info($"特化原始输出（{raw.Length} 字）：{Preview(raw)}");
+
+                var result = WeVisOneParser.Parse(raw);
+                assistant.AttachImage(imageBytes);
+                assistant.ApplyDetection(result);
+                AppLog.Info(
+                    $"特化解析：{result.Boxes.Count} 个框"
+                    + (string.IsNullOrEmpty(result.Label) ? "" : $"，标签 {result.Label}")
+                    + (result.IsNone ? "（None）" : ""));
+            }
+
             assistant.Complete();
 
             if (answer.Length > 0)
@@ -579,6 +848,7 @@ public partial class MainWindowViewModel : ObservableObject
                 {
                     Role = ChatRole.Assistant,
                     Text = answer.ToString(),
+                    IsDetection = isDetection,
                 });
             }
 
@@ -628,7 +898,12 @@ public partial class MainWindowViewModel : ObservableObject
         PersistSession();
         RefreshSessionItem();
 
-        await (_generation = StreamAssistantAsync());
+        // 重新生成沿用上一轮的图片与特化判定
+        var lastUser = _session.Messages.LastOrDefault(message => message.Role == ChatRole.User);
+        var imageBytes = lastUser?.ImageFile is { } file ? _sessionStore.TryReadImage(file) : null;
+        var detection = imageBytes is not null && IsSpecializationActive;
+
+        await (_generation = StreamAssistantAsync(imageBytes, detection));
     }
 
     [RelayCommand]
@@ -646,6 +921,11 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         Messages.RemoveAt(index);
+        if (_session.Messages[index].ImageFile is { } imageFile)
+        {
+            _sessionStore.TryDeleteImage(imageFile);
+        }
+
         _session.Messages.RemoveAt(index);
         PersistSession();
         RefreshSessionItem();
@@ -656,7 +936,11 @@ public partial class MainWindowViewModel : ObservableObject
     private bool CanStop() => IsStreaming;
 
     [RelayCommand(CanExecute = nameof(CanStop))]
-    private void Stop() => _cts?.Cancel();
+    private void Stop()
+    {
+        AppLog.Info("用户请求停止生成");
+        _cts?.Cancel();
+    }
 
     [RelayCommand]
     private void NewSession()
@@ -725,6 +1009,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
 
         Messages.Clear();
+        _sessionStore.TryDeleteImages(_session);
         _session.Messages.Clear();
         PersistSession();
         RefreshSessionItem();
@@ -745,6 +1030,7 @@ public partial class MainWindowViewModel : ObservableObject
         // 先等生成收尾，否则收尾时的 PersistSession 会把刚删掉的文件又写回去
         await StopGenerationAsync();
 
+        _sessionStore.TryDeleteImages(item.Session);
         _sessionStore.TryDelete(item.Id);
         Sessions.Remove(item);
 
@@ -767,7 +1053,68 @@ public partial class MainWindowViewModel : ObservableObject
     private void ToggleSettings() => IsSettingsOpen = !IsSettingsOpen;
 
     [RelayCommand]
-    private void CloseSettings() => IsSettingsOpen = false;
+    private void ToggleLog() => IsLogOpen = !IsLogOpen;
+
+    [RelayCommand]
+    private void CloseLog() => IsLogOpen = false;
+
+    [RelayCommand]
+    private void ClearLogs()
+    {
+        AppLog.Clear();
+        Logs.Clear();
+        OnPropertyChanged(nameof(LogSummary));
+        StatusText = "日志已清空";
+    }
+
+    [RelayCommand]
+    private async Task CopyLogsAsync()
+    {
+        if (Logs.Count == 0)
+        {
+            StatusText = "还没有日志可以复制";
+            return;
+        }
+
+        if (ClipboardWriter is null)
+        {
+            return;
+        }
+
+        await ClipboardWriter(string.Join(Environment.NewLine, Logs.Select(entry => entry.ToLogLine())));
+        StatusText = $"已复制 {Logs.Count} 条日志";
+    }
+
+    private void OnAppLogAppended(LogEntry entry)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+        {
+            AppendLog(entry);
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(() => AppendLog(entry));
+        }
+    }
+
+    private void AppendLog(LogEntry entry)
+    {
+        Logs.Add(new LogEntryViewModel(entry));
+
+        while (Logs.Count > AppLog.Capacity)
+        {
+            Logs.RemoveAt(0);
+        }
+
+        OnPropertyChanged(nameof(LogSummary));
+    }
+
+    [RelayCommand]
+    private void CloseSettings()
+    {
+        IsSettingsOpen = false;
+        SaveSettings();
+    }
 
     [RelayCommand]
     private async Task AddDirectoryAsync()
@@ -913,6 +1260,7 @@ public partial class MainWindowViewModel : ObservableObject
             StatusText = $"{model.DisplayName} · {model.Quantization} · {model.SizeText}";
             OnPropertyChanged(nameof(Header));
             OnPropertyChanged(nameof(CanChat));
+        OnPropertyChanged(nameof(CanAttachImage));
             UpdateStats(null, null, null);
         }
         catch (Exception ex)
@@ -922,6 +1270,7 @@ public partial class MainWindowViewModel : ObservableObject
             IsSettingsOpen = true;
             OnPropertyChanged(nameof(Header));
             OnPropertyChanged(nameof(CanChat));
+        OnPropertyChanged(nameof(CanAttachImage));
         }
         finally
         {
@@ -1049,7 +1398,7 @@ public partial class MainWindowViewModel : ObservableObject
         }
     }
 
-    private ChatOptions BuildChatOptions()
+    private ChatOptions BuildChatOptions(byte[]? imageBytes = null)
     {
         var defaults = _settings.Defaults;
         ModelProfile? profile = null;
@@ -1066,6 +1415,7 @@ public partial class MainWindowViewModel : ObservableObject
             TopK = profile?.TopK ?? defaults.TopK,
             RepeatPenalty = profile?.RepeatPenalty ?? defaults.RepeatPenalty,
             MaxTokens = profile?.MaxTokens ?? defaults.MaxTokens,
+            ImageBytes = imageBytes,
         };
     }
 
@@ -1088,7 +1438,7 @@ public partial class MainWindowViewModel : ObservableObject
             var lastUser = session.Messages.LastOrDefault(message => message.Role == ChatRole.User);
             if (lastUser is not null)
             {
-                request.Add(new ChatMessage(ChatRole.User, lastUser.Text));
+                request.Add(new ChatMessage(ChatRole.User, RequestText(lastUser)));
             }
 
             return request;
@@ -1098,7 +1448,7 @@ public partial class MainWindowViewModel : ObservableObject
         var window = engine.ContextSize;
         if (window <= 0)
         {
-            request.AddRange(session.Messages.Select(message => new ChatMessage(message.Role, message.Text)));
+            request.AddRange(session.Messages.Select(message => new ChatMessage(message.Role, RequestText(message))));
             return request;
         }
 
@@ -1112,7 +1462,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         for (var i = session.Messages.Count - 1; i >= 0; i--)
         {
-            var message = new ChatMessage(session.Messages[i].Role, session.Messages[i].Text);
+            var message = new ChatMessage(session.Messages[i].Role, RequestText(session.Messages[i]));
             var cost = engine.CountTokens(message.Text) + 8;
 
             if (used + cost > budget && kept.Count >= 2)
@@ -1136,8 +1486,16 @@ public partial class MainWindowViewModel : ObservableObject
         return request;
     }
 
+    /// <summary>特化请求按 WeVisOne 官方模板用固定 system，避免中文提示词带偏输出格式。</summary>
+    private string RequestText(StoredMessage message) =>
+        message.ImageFile is not null && IsSpecializationActive
+            ? WeVisOnePrompts.Referring(message.Text)
+            : message.Text;
+
     private string GetSystemPrompt() =>
-        string.IsNullOrWhiteSpace(SystemPrompt) ? DefaultSystemPrompt : SystemPrompt;
+        IsSpecializationActive
+            ? WeVisOnePrompts.System
+            : string.IsNullOrWhiteSpace(SystemPrompt) ? DefaultSystemPrompt : SystemPrompt;
 
     private void UpdateStats(UsageInfo? usage, double? seconds, double? firstTokenMs, int trimmed = 0)
     {
@@ -1202,6 +1560,13 @@ public partial class MainWindowViewModel : ObservableObject
         return oneLine.Length <= 18 ? oneLine : oneLine[..18] + "…";
     }
 
+    /// <summary>日志里只留一小段原文，够看清格式即可。</summary>
+    private static string Preview(string text, int max = 400)
+    {
+        var oneLine = text.Replace('\r', ' ').Replace('\n', ' ').Trim();
+        return oneLine.Length <= max ? oneLine : oneLine[..max] + "…";
+    }
+
     private static string DescribeError(Exception ex) => ex switch
     {
         BackendUnavailableException => ex.Message,
@@ -1224,6 +1589,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (!_sessionStore.TrySave(session) && _sessionStore.LastError is { } error)
         {
             StatusText = error;
+            AppLog.Error($"保存会话失败：{error}");
         }
     }
 
@@ -1243,6 +1609,7 @@ public partial class MainWindowViewModel : ObservableObject
         if (!_settingsStore.TrySave(_settings) && _settingsStore.LastError is { } error)
         {
             StatusText = error;
+            AppLog.Error($"保存设置失败：{error}");
         }
     }
 
@@ -1275,6 +1642,7 @@ public partial class MainWindowViewModel : ObservableObject
         _useDemo = true;
         OnPropertyChanged(nameof(Header));
         OnPropertyChanged(nameof(CanChat));
+        OnPropertyChanged(nameof(CanAttachImage));
 
         InputText = "自检：渲染一段 Markdown";
 

@@ -1,0 +1,22 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:BonsaiLLM.App.ViewModels"
+             x:Class="BonsaiLLM.App.Views.DetectionOverlayView"
+             x:DataType="vm:ChatMessageViewModel">
+
+  <Border CornerRadius="8"
+          ClipToBounds="True"
+          Background="#0F1115"
+          HorizontalAlignment="Stretch">
+    <Viewbox Stretch="Uniform"
+             MaxWidth="760"
+             MaxHeight="440"
+             HorizontalAlignment="Center">
+      <Grid Name="PART_Surface">
+        <Image Name="PART_Image" Stretch="Fill" />
+        <Canvas Name="PART_Layer" />
+      </Grid>
+    </Viewbox>
+  </Border>
+
+</UserControl>

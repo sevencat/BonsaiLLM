@@ -1,3 +1,4 @@
+using BonsaiLLM.Core.Diagnostics;
 using BonsaiLLM.Core.Settings;
 using LLama.Native;
 
@@ -58,6 +59,7 @@ public static class LlamaBackend
             }
 
             _configured = backend;
+            AppLog.Info($"原生后端已配置：{backend}（切换后端需重启应用）");
         }
     }
 
@@ -67,6 +69,7 @@ public static class LlamaBackend
         if (level == LLamaLogLevel.Error)
         {
             LastError = message;
+            AppLog.Warn($"原生后端：{message}");
         }
     }
 

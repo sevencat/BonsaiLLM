@@ -11,6 +11,12 @@ public sealed class StoredMessage
     public string Text { get; set; } = "";
 
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.Now;
+
+    /// <summary>随消息保存的图片文件名（位于 images 目录）；null 表示纯文本。</summary>
+    public string? ImageFile { get; set; }
+
+    /// <summary>这条助手回复是否来自特化检测，加载时据此恢复坐标叠加。</summary>
+    public bool IsDetection { get; set; }
 }
 
 /// <summary>

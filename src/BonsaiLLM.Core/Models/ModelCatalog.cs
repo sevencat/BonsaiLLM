@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Diagnostics;
 using System.Text.RegularExpressions;
+using BonsaiLLM.Core.Diagnostics;
 using BonsaiLLM.Core.Gguf;
 
 namespace BonsaiLLM.Core.Models;
@@ -28,9 +30,19 @@ public sealed partial class ModelCatalog : IModelCatalog
         IProgress<ScanProgress>? progress,
         CancellationToken cancellationToken)
     {
+        var stopwatch = Stopwatch.StartNew();
         var files = new List<string>();
-        foreach (var directory in directories.Where(Directory.Exists))
+        var missing = 0;
+        foreach (var directory in directories)
         {
+            if (!Directory.Exists(directory))
+            {
+                // 目录被删/挪盘很常见，用户需要知道扫描为什么少了模型
+                missing++;
+                AppLog.Warn($"目录不存在，已跳过：{directory}");
+                continue;
+            }
+
             try
             {
                 files.AddRange(Directory.EnumerateFiles(directory, "*.gguf", EnumerationOptions));
@@ -38,8 +50,12 @@ public sealed partial class ModelCatalog : IModelCatalog
             catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // 单个目录不可读不影响其它目录
+                AppLog.Warn($"目录不可读，已跳过：{directory}（{ex.Message}）");
             }
         }
+
+        AppLog.Info(
+            $"开始扫描 {directories.Count} 个目录（{missing} 个不存在），找到 {files.Count} 个 .gguf");
 
         var visionFiles = files.Where(IsVisionFile).ToList();
         var mainFiles = files.Where(f => !IsVisionFile(f)).ToList();
@@ -119,6 +135,23 @@ public sealed partial class ModelCatalog : IModelCatalog
             .Select(pair => new VisionFileInfo(pair.Key, pair.Value))
             .OrderBy(v => v.Path, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
+
+        var message = $"扫描完成：{models.Count} 个模型、{unpaired.Count} 个未配对 mmproj、{errors.Count} 个文件读取失败，"
+            + $"用时 {stopwatch.ElapsedMilliseconds} ms";
+
+        if (errors.Count > 0)
+        {
+            AppLog.Warn(message);
+        }
+        else
+        {
+            AppLog.Info(message);
+        }
+
+        foreach (var error in errors.Take(5))
+        {
+            AppLog.Warn($"读取失败（{Path.GetFileName(error.Path)}）：{error.Message}");
+        }
 
         return new ModelScanResult(models, unpaired, errors.ToList());
     }

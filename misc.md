@@ -218,7 +218,7 @@
 - **`--selfcheck` 保留**：以假数据引擎跑一遍 Markdown 渲染链路，跳过设置读取与扫描，用于无模型时的 UI 冒烟。
 - **扫描性能实测**：200 个 GGUF 头部解析 163 ms（本机 SSD），扫描在后台线程，UI 不冻结。
 
-## 14. M3–M6 实现记录
+## 14. M3–M7 实现记录
 
 - **会话持久化**：`ChatSession` / `SessionStore` 放 `BonsaiLLM.Core.Sessions`，一会话一文件 `%AppData%\BonsaiLLM\sessions\{id}.json`，写入走"临时文件 + `File.Replace`"。标题取首条 user 消息前 24 字。
 - **空状态遮罩会吃掉消息**：`IsEmptyVisible` 原先只看 `Models.Count`，模型列表为空时那层「添加模型目录」遮罩盖住整个消息区，表现为发完消息看不到回复。改成 `Models.Count == 0 && Messages.Count == 0`，并在 `Messages.CollectionChanged` 里调 `UpdateEmptyState()`。排查时容易误判成"消息没上屏"。
@@ -229,12 +229,25 @@
 - **设置面板（M5）**：后端、显卡型号、系统提示词、当前模型四项参数、字号 Slider（12–20，绑 `Window.FontSize`）、模型目录列表。参数落在 `settings.json` 的 `modelProfiles[模型绝对路径]`，`SaveProfileCommand` 写盘后给 `ProfileNotice` 提示，下一轮请求即生效（`ChatOptions` 每轮从 profile 读，不需要重新加载模型）。
 - **消息操作**：助手消息下方「复制 / 重新生成 / 删除」。Avalonia 12 的剪贴板是 `IClipboard.SetDataAsync(IAsyncDataTransfer)`：`new DataTransfer()` + `DataTransferItem.CreateText(text)`；`DataTransfer` 在 `Avalonia.Input`。旧的 `SetTextAsync` 只在 `ClipboardExtensions` 里，容易误判成 API 被删。`OnCopyMessage` 用 try/catch 把失败写进状态栏，不再静默返回。
 - **重新生成只允许最后一轮**：删中间那条再追加到末尾会把历史顺序打乱，命中非最后一条时只提示「只能重新生成最后一条回复」。
+- **滚动跟随要看 `OffsetDelta` 而不是 `Extent`**：`ScrollChanged` 里内容变长也会触发，此时 offset 没动、离底距离瞬间变大，若直接按距离判断会把「跟着流式输出」误判成「用户上滚了」。判据是 `e.OffsetDelta.Y == 0` 就当作非用户滚动直接返回。注意 `OffsetDelta` 是 `Vector`（用 `.Y`），`Extent`/`Viewport` 是 `Size`（用 `.Height`）。跟随本身靠 `ScrollToTail(force)`：非强制时离底 > 32px 就跳过；自己发的新 user 消息强制回底。按钮用 `IsVisible` 切换而不是绑 VM 属性，纯视图状态，`IsVisible=false` 时控件会从 UIA 树里消失，测试时按名字找不到是正常的。
 - **应用图标**：根目录 `Logo.png`（512×512、24bpp 无 alpha）复制到 `src/BonsaiLLM.App/Assets/logo.png`，csproj 加 `<AvaloniaResource Include="Assets\logo.png" />`，`MainWindow` 上 `Icon="/Assets/logo.png"`（`WindowIcon` 由字符串路径的 TypeConverter 转，不用手动 `Bitmap`）。exe/任务栏图标靠 `<ApplicationIcon>Assets\app.ico</ApplicationIcon>`；`app.ico` 是用 PowerShell 现搓的：ICONDIR + 16 字节目录项（宽高字节、planes=1、bitCount=32、数据长、偏移）+ 各尺寸 PNG 数据，尺寸 16/24/32/48/64/128/256，256 的宽高字节写 0。只设 `ApplicationIcon` 不换窗口图标，只设 `Window.Icon` 不换 exe 图标，两处都要。
 - **会话级操作收进 `⋮` 菜单**：侧栏标题行「会话 + 新建 + ⋮」，`Button.Flyout` 挂 `MenuFlyout`（重命名 / 清空消息 / 删除会话）。侧栏底部空出来留给内存、CPU、显存等运行时指标。重命名改成就地编辑：`IsRenaming` 控制输入框显隐，VM 触发 `RenameRequested` 事件让窗口 `Dispatcher.UIThread.Post` 去 `Focus()` + `SelectAll()`（展开后才存在控件，直接 Focus 拿不到），回车提交、Esc 走 `CancelRenameCommand` 还原标题。
 - **清空/删除会话前必须等生成任务收尾**：`StreamAssistantAsync` 的 `finally` 会往发起时的会话追加回复并 `PersistSession`，如果只是 `_cts.Cancel()` 就立刻清空/删除，回复会被写回刚清空的会话、删掉的文件也会被重新写出来。做法是把生成任务存进 `_generation`，`StopGenerationAsync()` 里 cancel 后 `await` 它，`ClearSessionAsync` / `DeleteCurrentSessionAsync` 先等再动数据。
 - **语法高亮**：加 `MarkView.Avalonia.SyntaxHighlighting 12.4.*`，在 `App.axaml.cs` 建窗口前 `MarkdownViewerDefaults.Extensions.AddTextMateHighlighting()`（全局默认，Light+ 主题）。自检截图里 C# 代码块的 `var`/`new`/注释已按 token 着色。
 - **快捷键**：`Ctrl+Enter` 发送、`Esc` 停止生成（无生成时关闭设置）、`Ctrl+N` 新会话、`Ctrl+,` 设置、`Ctrl+R` 重新扫描。
-- **截图验证脚本**（临时，已清理，需要时按此重写）：PowerShell + Win32 P/Invoke，`PrintWindow` 抓窗口、`SetCursorPos`+`mouse_event` 点击、`WScript.Shell.SendKeys` 输入，`-ClickX/-ClickY` 按窗口比例定位。测按钮坐标别靠肉眼估：把图放大后用像素扫描（找主色按钮块）求行范围，之前 y 差 20px 就整轮点空。
+- **截图验证脚本**（临时，已清理，需要时按此重写）：PowerShell + Win32 P/Invoke，`PrintWindow` 抓窗口、`SetCursorPos`+`mouse_event` 点击、`WScript.Shell.SendKeys` 输入，`-ClickX/-ClickY` 按窗口比例定位。测按钮坐标别靠肉眼估：把图放大后用像素扫描（找主色按钮块）求行范围，之前 y 差 20px 就整轮点空。`PrintWindow(hwnd, hdc, 2)` 抓被遮挡的窗口也正常，不必抢前台；用户在用机器时优先走 UIA（`InvokePattern` / `ValuePattern` / `ScrollPattern`），只有必须的滚轮才 `SetForegroundWindow` + `SetCursorPos` + `mouse_event`。
+- **日志抽屉**：`BonsaiLLM.Core/Diagnostics/AppLog.cs` 是进程内环形缓冲（静态、锁保护、上限 500），提供 `Info/Warn/Error` 和 `Appended` 事件；核心层不引 Avalonia，VM 收到事件后 `Dispatcher.UIThread.Post` 转成 `LogEntryViewModel`（级别→颜色）。事件分发包了 try/catch，日志自身出错不能影响加载模型的主流程。埋点位置：目录扫描（含不存在/不可读目录、读取失败文件名 Top5）、后端配置、模型加载开始/完成/失败、每轮「发送请求（新增几条、预填充 token、KV 复用）」「本轮结束（token、耗时、tok/s）」、推理异常、会话/设置保存失败。抽屉是右侧主区第 3 行（`RowDefinitions="Auto,*,Auto,Auto"`），`IsVisible` 绑 `IsLogOpen`，新条目由窗口侧 `Logs.CollectionChanged` 触发 `ScrollToEnd`。复制走窗口注入的 `ClipboardWriter`——Avalonia 12 的剪贴板不是 `SetTextAsync`，要 `DataTransfer` + `DataTransferItem.CreateText` 再 `SetDataAsync`。
+- **消息虚拟化**：`ItemsControl` 加 `ItemsPanelTemplate` 里的 `VirtualizingStackPanel` 就能在 `ScrollViewer` 里虚拟化，不用换 `ListBox`（省掉选中态/容器样式）。验证手段：UIA 数 `ControlType.Text` 元素——126 条消息时约 28 个，全量实例化会有上千个。
+- **虚拟化下的滚动跟随三个坑**：①`ScrollToEnd()` 只推到「已实现部分」的末端，Extent 是估算值，强制回底要连推 3 帧（`PushToTail(retries)`，每帧 `DispatcherPriority.Background` 重投）；②离底判断在虚拟化下会瞬时失真，所以跟随状态改成由用户输入驱动（`_followTail`）：滚轮上滚/拖滚动条置 false，滚回底部或点按钮恢复，另加 600ms 抑制窗口防止刚上滚那几帧被误判成「已到底」；③`ScrollViewer` 自己处理滚轮并置 `Handled=true`，XAML 上挂 `PointerWheelChanged` 收不到事件，必须在代码里 `AddHandler(... RoutingStrategies.Tunnel, handledEventsToo: true)`。
+- **上下文兜底**：VM 侧按预算裁剪后仍可能撞满窗（预留量和实际生成量对不上，`MaxTokens` 为 -1 时尤其明显），引擎在预填充后按 `contextSize - used - promptTokens - 32` 压 `MaxTokens`，剩余 ≤64 时只生成 8 token 并写警告日志。否则 LLamaSharp 直接抛 `context window is full`，界面上就是一段红字错误。
+- **图片只走 `ChatOptions.ImageBytes`，不塞进 `ChatMessage`**：`_fed` 与请求历史靠 `ChatMessage` 的 record 相等做前缀比对，`byte[]` 字段会让每轮重建的历史永远"不相等"，KV 复用全废。图片按轮携带，历史文本保持稳定。
+- **mtmd 通道**：`<__media__>` 必须出现在最后一条 user 内容前（`ChatPromptBuilder.BuildPrompt(messages, withMedia)`），`MtmdWeights.LoadMedia(bytes)` 要在 `InferAsync` 之前调用，生成结束后 `ClearMedia()` + `Dispose()`。图片 token 数没法精确算，记账按 1024 保守预留，否则长会话加图依旧会撞满上下文。
+- **发图前预处理**：EXIF `EncodedOrigin` 的 8 种情况用 `SKMatrix` 直接映射（源坐标 → 目标坐标），`5/6/7/8` 交换宽高；随后最长边缩到 1600、JPEG 92。实测 4.1 MB 手机图 → 442 KB / 1568×1068。
+- **模型输出格式不稳定**：mtmd 执行器会吞掉生成序列的第一个 token，正常应为 `<ref>person</ref><box>...` 时常变成 `person</ref><box>...`，只能从 `</ref>` 前缀反推标签；偶尔还会输出 `<0><980> The following people are located:` 这类前缀，反推时必须拒绝含 `<`/`>` 或超过 40 字的"标签"，否则界面上会出现一串坐标当标签。`<box>` 内坐标是 0~1000 整数，按 4 个一组切；近重复框用 IoU>0.92 去重。
+- **叠加层对齐**：`Viewbox` 包一个固定成图片像素尺寸的 `Grid`（`Image` + `Canvas`），框坐标 = 归一化值 × 像素尺寸，缩放交给 Viewbox，窗口改大小后仍贴合。几十个同类框逐框挂标签会把图糊住，改成全图只有**一个** tooltip：`Canvas.PointerMoved` 里按指针位置命中框再显示，框本身 `IsHitTestVisible=false`（否则 Canvas 收不到移动事件）。导出烧图同理，只画框 + 左下角「person x N」图例。
+- **检测结果的持久化**：图片文件写 `%AppData%\BonsaiLLM\images\{guid}.jpg`，`StoredMessage` 只存 `ImageFile` 文件名；助手消息自己不带图，加载时往前找最近一条带图消息当源图。`IsDetection` 落盘，恢复时重新 `WeVisOneParser.Parse` 即可还原叠加。删除消息/清空会话/删除会话都要顺手删图片文件。
+- **UIA 验证图片链路**：Windows 的文件对话框（`IFileDialog`）在 UIA 里挂在主窗口的子树下，不是 `RootElement` 的顶层子节点；文件名框是 ComboBox 里的 Edit，`AutomationId=1148`，`ValuePattern` 常不可用，`SetFocus` 也可能抛异常——用 `SendKeys` 输入完整路径再 `{ENTER}` 最省事。`TextBlock` 的 UIA `Name` 会截断长文本（几百字就只留开头），别拿它验证长输出。
+- **负样本**：`None`/空输出在解析器单测里已覆盖；但 WeVisOne-VL-2B 对纯色图仍会幻觉出一个全图框，确认「无目标显示未找到」还需要更难的负样本（复杂背景、遮挡）。
 
 ## 15. 许可证
 

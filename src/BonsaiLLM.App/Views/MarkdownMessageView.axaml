@@ -1,12 +1,28 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:mv="using:MarkView.Avalonia"
+             xmlns:views="using:BonsaiLLM.App.Views"
              xmlns:vm="using:BonsaiLLM.App.ViewModels"
              x:Class="BonsaiLLM.App.Views.MarkdownMessageView"
              x:DataType="vm:ChatMessageViewModel">
 
   <Border Classes="bubble" Classes.user="{Binding IsUser}">
-    <Panel>
+    <StackPanel Spacing="8">
+      <!-- 特化检测：原图 + 坐标叠加 -->
+      <views:DetectionOverlayView IsVisible="{Binding ShowDetection}" />
+
+      <!-- 用户上传的缩略图 -->
+      <Image Source="{Binding Image}"
+             IsVisible="{Binding ShowUserImage}"
+             MaxWidth="360"
+             MaxHeight="260"
+             Stretch="Uniform"
+             HorizontalAlignment="Left" />
+
+      <TextBlock Text="{Binding DetectionSummary}"
+                 IsVisible="{Binding ShowDetection}"
+                 Classes="muted" />
+
       <!-- 用户消息按纯文本显示，避免自己输入的 * 被当 Markdown -->
       <TextBlock Text="{Binding Text}"
                  TextWrapping="Wrap"
@@ -14,8 +30,19 @@
 
       <!-- MarkdownViewer 在自适应宽度容器里测量为 0，必须由外部给满宽度 -->
       <mv:MarkdownViewer Name="PART_Viewer"
-                         IsVisible="{Binding !IsUser}" />
-    </Panel>
+                         IsVisible="{Binding ShowMarkdown}" />
+
+      <!-- 特化消息保留模型原始输出，绝不丢 -->
+      <Expander Header="原始输出"
+                FontSize="11"
+                IsVisible="{Binding ShowDetection}"
+                IsExpanded="False">
+        <TextBlock Text="{Binding Text}"
+                   TextWrapping="Wrap"
+                   FontSize="11"
+                   Foreground="#6B7280" />
+      </Expander>
+    </StackPanel>
   </Border>
 
 </UserControl>

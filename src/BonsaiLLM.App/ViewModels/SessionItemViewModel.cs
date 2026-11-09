@@ -13,6 +13,8 @@ public partial class SessionItemViewModel : ObservableObject
 
     public string Id => Session.Id;
 
+    public override string ToString() => Title;
+
     public string Title => string.IsNullOrWhiteSpace(Session.Title) ? "新会话" : Session.Title;
 
     public string Subtitle

@@ -10,6 +10,9 @@ public sealed class ModelItemViewModel(ModelDescriptor descriptor)
 
     public string Title => Descriptor.DisplayName;
 
+    /// <summary>UIA / 读屏软件会直接读这个值，别让它显示类型名。</summary>
+    public override string ToString() => Title;
+
     public string Subtitle
     {
         get
