@@ -1,0 +1,138 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:BonsaiLLM.App.ViewModels"
+             x:Class="BonsaiLLM.App.Views.SettingsPanel"
+             x:DataType="vm:MainWindowViewModel">
+
+  <!-- 设置面板：独立组件，MainWindow 只负责摆放与显隐 -->
+  <Border Background="#66000000">
+    <Border Width="580"
+            MaxHeight="660"
+            CornerRadius="16"
+            Background="White"
+            Padding="24"
+            HorizontalAlignment="Center"
+            VerticalAlignment="Center"
+            BoxShadow="0 12 40 0 #40000000">
+      <ScrollViewer>
+        <StackPanel Spacing="4">
+          <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="设置" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Content="关闭" Command="{Binding CloseSettingsCommand}" />
+          </Grid>
+
+          <TextBlock Text="推理后端" Classes="section" />
+          <ComboBox ItemsSource="{Binding BackendOptions}"
+                    SelectedItem="{Binding SelectedBackend}"
+                    HorizontalAlignment="Stretch">
+            <ComboBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:BackendOption">
+                <StackPanel Spacing="1">
+                  <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                  <TextBlock Text="{Binding Note}" Classes="muted" />
+                </StackPanel>
+              </DataTemplate>
+            </ComboBox.ItemTemplate>
+          </ComboBox>
+          <TextBlock Text="{Binding SettingsNotice}"
+                     Classes="muted"
+                     Foreground="#B45309"
+                     Margin="0,4,0,0" />
+
+          <TextBlock Text="显卡" Classes="section" />
+          <TextBlock Text="{Binding GpuSummary}" Classes="muted" FontSize="13" />
+
+          <TextBlock Text="系统提示词" Classes="section" />
+          <TextBox Text="{Binding SystemPrompt}"
+                   AcceptsReturn="True"
+                   TextWrapping="Wrap"
+                   Height="80"
+                   PlaceholderText="加载模型后可编辑，保存到该模型的配置里" />
+
+          <TextBlock Text="特化（坐标标注）" Classes="section" />
+          <CheckBox Content="启用特化：命中的模型按检测协议解析坐标"
+                    IsChecked="{Binding SpecializationEnabled}" />
+          <TextBox Text="{Binding SpecializedModelNamesText}"
+                   PlaceholderText="WeVisOne" />
+          <TextBlock Text="模型文件名包含任一关键词（逗号分隔）即视为检测模型；发送图片时按 referring 模板请求。"
+                     Classes="muted"
+                     FontSize="11"
+                     TextWrapping="Wrap" />
+          <TextBlock Text="当前模型已命中特化，附图后会按坐标渲染。"
+                     Foreground="#047857"
+                     FontSize="11"
+                     Margin="0,2,0,0"
+                     IsVisible="{Binding IsSpecializationActive}" />
+
+          <TextBlock Text="当前模型参数" Classes="section" />
+          <Grid ColumnDefinitions="*,12,*"
+                RowDefinitions="Auto,Auto"
+                RowSpacing="8"
+                IsEnabled="{Binding HasModel}">
+            <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
+              <TextBlock Text="GPU 层数（0 = 纯 CPU）" Classes="muted" />
+              <TextBox Text="{Binding ProfileGpuLayersText}" />
+            </StackPanel>
+            <StackPanel Grid.Row="0" Grid.Column="2" Spacing="2">
+              <TextBlock Text="上下文长度（token）" Classes="muted" />
+              <TextBox Text="{Binding ProfileContextSizeText}" />
+            </StackPanel>
+            <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2">
+              <TextBlock Text="温度（0–2）" Classes="muted" />
+              <TextBox Text="{Binding ProfileTemperatureText}" />
+            </StackPanel>
+            <StackPanel Grid.Row="1" Grid.Column="2" Spacing="2">
+              <TextBlock Text="最大 token（-1 不限）" Classes="muted" />
+              <TextBox Text="{Binding ProfileMaxTokensText}" />
+            </StackPanel>
+          </Grid>
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0" IsEnabled="{Binding HasModel}">
+            <Button Content="保存参数" Command="{Binding SaveProfileCommand}" />
+            <Button Content="重新加载模型" Command="{Binding ReloadModelCommand}" />
+          </StackPanel>
+          <TextBlock Text="{Binding ProfileNotice}"
+                     Classes="muted"
+                     Foreground="#B45309"
+                     Margin="0,4,0,0" />
+
+          <TextBlock Text="字号" Classes="section" />
+          <Slider Minimum="12"
+                  Maximum="20"
+                  TickFrequency="1"
+                  IsSnapToTickEnabled="True"
+                  Value="{Binding FontSize}"
+                  Width="220"
+                  HorizontalAlignment="Left" />
+
+          <TextBlock Text="模型目录" Classes="section" />
+          <ItemsControl ItemsSource="{Binding ModelDirectories}">
+            <ItemsControl.ItemTemplate>
+              <DataTemplate x:CompileBindings="False">
+                <Grid ColumnDefinitions="*,Auto" Margin="0,2">
+                  <TextBlock Text="{Binding}"
+                             TextTrimming="CharacterEllipsis"
+                             VerticalAlignment="Center"
+                             FontSize="13" />
+                  <Button Grid.Column="1"
+                          Content="移除"
+                          FontSize="12"
+                          Padding="8,2"
+                          Tag="{Binding}"
+                          Click="OnRemoveDirectoryClick" />
+                </Grid>
+              </DataTemplate>
+            </ItemsControl.ItemTemplate>
+          </ItemsControl>
+
+          <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
+            <Button Content="添加目录" Command="{Binding AddDirectoryCommand}" />
+            <Button Content="重新扫描" Command="{Binding RescanCommand}" />
+          </StackPanel>
+
+          <TextBlock Text="{Binding SettingsFilePath}" Classes="muted" Margin="0,16,0,0" />
+          <TextBlock Text="{Binding SessionsDirectory}" Classes="muted" />
+        </StackPanel>
+      </ScrollViewer>
+    </Border>
+  </Border>
+</UserControl>

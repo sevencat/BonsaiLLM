@@ -1,4 +1,5 @@
 using BonsaiLLM.App.ViewModels;
+using BonsaiLLM.Core;
 using BonsaiLLM.Core.Chat;
 using BonsaiLLM.Core.Models;
 using BonsaiLLM.Core.Sessions;
@@ -14,6 +15,9 @@ public sealed class AppServices
 
     private AppServices()
     {
+        // 便携模式：数据放在 exe 同目录；旧版 %AppData% 的数据搬一次
+        AppPaths.MigrateFromLegacyIfNeeded();
+
         SettingsStore = new SettingsStore();
         SessionStore = new SessionStore();
         Catalog = new ModelCatalog();

@@ -21,10 +21,7 @@ public sealed class SessionStore
 
     public SessionStore(string? directory = null)
     {
-        Directory = directory ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "BonsaiLLM",
-            "sessions");
+        Directory = directory ?? AppPaths.SessionsDirectory;
         ImagesDirectory = Path.Combine(Path.GetDirectoryName(Directory) ?? Directory, "images");
     }
 

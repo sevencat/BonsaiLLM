@@ -57,14 +57,8 @@ public partial class MainWindowViewModel : ObservableObject
             new BackendOption(BackendKind.Cpu, "CPU", "兼容性最好，速度最慢"),
         ];
 
-        ContextModeOptions =
-        [
-            new ContextModeOption(ContextMode.Carry, "携带历史", "把之前的问答一起发给模型"),
-            new ContextModeOption(ContextMode.Fresh, "每次全新", "只发当前问题，界面仍保留历史"),
-        ];
-
         SelectedBackend = BackendOptions.FirstOrDefault(option => option.Kind == _settings.Backend);
-        SelectedContextMode = ContextModeOptions.First(option => option.Mode == _settings.DefaultContextMode);
+        _carryHistory = _settings.DefaultContextMode == ContextMode.Carry;
         _fontSize = _settings.FontSize;
         _specializedModelNamesText = string.Join("，", _settings.SpecializedModelNames);
 
@@ -84,6 +78,13 @@ public partial class MainWindowViewModel : ObservableObject
         {
             OnPropertyChanged(nameof(ShowReadyHint));
             UpdateEmptyState();
+        };
+
+        PendingFiles.CollectionChanged += (_, _) =>
+        {
+            OnPropertyChanged(nameof(HasPendingFiles));
+            OnPropertyChanged(nameof(HasPendingAttachments));
+            SendCommand.NotifyCanExecuteChanged();
         };
 
         // 日志抽屉：先补齐进程里已有的记录，再接增量
@@ -110,13 +111,14 @@ public partial class MainWindowViewModel : ObservableObject
 
     public IReadOnlyList<BackendOption> BackendOptions { get; }
 
-    public IReadOnlyList<ContextModeOption> ContextModeOptions { get; }
-
     /// <summary>由窗口注入的目录选择器，避免 ViewModel 直接依赖 StorageProvider。</summary>
     public Func<Task<string?>>? DirectoryPicker { get; set; }
 
     /// <summary>由窗口注入的图片选择器。</summary>
     public Func<Task<string?>>? ImagePicker { get; set; }
+
+    /// <summary>由窗口注入的附件选择器（可多选，返回本地路径）。</summary>
+    public Func<Task<IReadOnlyList<string>>>? FilePicker { get; set; }
 
     /// <summary>由窗口注入的图片保存器（字节 + 建议文件名，返回是否已保存）。</summary>
     public Func<byte[], string, Task<bool>>? ImageSaver { get; set; }
@@ -129,6 +131,9 @@ public partial class MainWindowViewModel : ObservableObject
 
     /// <summary>请求进入重命名编辑态时触发，供窗口把焦点移到输入框。</summary>
     public event EventHandler? RenameRequested;
+
+    /// <summary>请求打开运行日志窗口，窗口生命周期由 View 管理。</summary>
+    public event EventHandler? LogRequested;
 
     public string Header => $"BonsaiLLM · {ActiveEngine.DisplayName}";
 
@@ -192,8 +197,9 @@ public partial class MainWindowViewModel : ObservableObject
     [ObservableProperty]
     private ModelItemViewModel? _selectedModel;
 
+    /// <summary>是否把历史问答一起发给模型；默认关闭，只发当前问题。</summary>
     [ObservableProperty]
-    private ContextModeOption? _selectedContextMode;
+    private bool _carryHistory;
 
     [ObservableProperty]
     private SessionItemViewModel? _currentSession;
@@ -237,6 +243,16 @@ public partial class MainWindowViewModel : ObservableObject
 
     private byte[]? _pendingImageBytes;
 
+    /// <summary>待发送的文本附件，发送后清空。</summary>
+    public ObservableCollection<PendingFileViewModel> PendingFiles { get; } = [];
+
+    public bool HasPendingFiles => PendingFiles.Count > 0;
+
+    public bool HasPendingAttachments => HasPendingImage || HasPendingFiles;
+
+    /// <summary>没有任何统计信息时把输入区右下角那行收起来。</summary>
+    public bool HasStatsText => StatsText.Length > 0;
+
     public bool HasPendingImage => PendingImage is not null;
 
     /// <summary>当前模型是否走 WeVisOne 特化（按模型名匹配，不按架构猜）。</summary>
@@ -250,6 +266,7 @@ public partial class MainWindowViewModel : ObservableObject
     partial void OnPendingImageChanged(Bitmap? value)
     {
         OnPropertyChanged(nameof(HasPendingImage));
+        OnPropertyChanged(nameof(HasPendingAttachments));
         SendCommand.NotifyCanExecuteChanged();
     }
 
@@ -300,6 +317,8 @@ public partial class MainWindowViewModel : ObservableObject
 
     partial void OnInputTextChanged(string value) => SendCommand.NotifyCanExecuteChanged();
 
+    partial void OnStatsTextChanged(string value) => OnPropertyChanged(nameof(HasStatsText));
+
     partial void OnIsStreamingChanged(bool value)
     {
         SendCommand.NotifyCanExecuteChanged();
@@ -346,25 +365,34 @@ public partial class MainWindowViewModel : ObservableObject
             : $"已选择 {value.Name}，加载模型时生效";
     }
 
-    partial void OnSelectedContextModeChanged(ContextModeOption? value)
+    private bool _suppressCarryHistoryChanges;
+
+    /// <summary>勾选项只是会话状态的投影，回写不应再触发保存。</summary>
+    private void SyncCarryHistory(ChatSession session)
     {
-        if (value is null || _suppressContextModeChanges)
+        _suppressCarryHistoryChanges = true;
+        CarryHistory = session.ContextMode == ContextMode.Carry;
+        _suppressCarryHistoryChanges = false;
+    }
+
+    partial void OnCarryHistoryChanged(bool value)
+    {
+        if (_suppressCarryHistoryChanges)
         {
             return;
         }
 
-        _settings.DefaultContextMode = value.Mode;
+        var mode = value ? ContextMode.Carry : ContextMode.Fresh;
+        _settings.DefaultContextMode = mode;
 
-        if (_session is not null && _session.ContextMode != value.Mode)
+        if (_session is not null && _session.ContextMode != mode)
         {
-            _session.ContextMode = value.Mode;
+            _session.ContextMode = mode;
             PersistSession();
         }
 
         SaveSettings();
-        StatusText = value.Mode == ContextMode.Fresh
-            ? "本会话只发当前问题，界面仍保留历史"
-            : "本会话携带历史";
+        StatusText = value ? "本会话携带历史" : "本会话只发当前问题，界面仍保留历史";
     }
 
     partial void OnCurrentSessionChanged(SessionItemViewModel? value)
@@ -491,20 +519,12 @@ public partial class MainWindowViewModel : ObservableObject
         ReloadMessages();
         AppLog.Info($"切换到会话《{session.Title}》，{session.Messages.Count} 条消息");
 
-        var option = ContextModeOptions.First(item => item.Mode == session.ContextMode);
-        if (!ReferenceEquals(SelectedContextMode, option))
-        {
-            _suppressContextModeChanges = true;
-            SelectedContextMode = option;
-            _suppressContextModeChanges = false;
-        }
+        SyncCarryHistory(session);
 
         OnPropertyChanged(nameof(Header));
         SessionTitleDraft = CurrentSession?.Title ?? string.Empty;
         UpdateStats(null, null, null);
     }
-
-    private bool _suppressContextModeChanges;
 
     private void ReloadMessages()
     {
@@ -578,6 +598,7 @@ public partial class MainWindowViewModel : ObservableObject
         CurrentSession = item;
         _suppressSessionSwitch = false;
 
+        SyncCarryHistory(session);
         ReloadMessages();
         SessionTitleDraft = session.Title;
         UpdateStats(null, null, null);
@@ -586,13 +607,31 @@ public partial class MainWindowViewModel : ObservableObject
     }
 
     private bool CanSend() =>
-        CanChat && !IsStreaming && (!string.IsNullOrWhiteSpace(InputText) || HasPendingImage);
+        CanChat
+        && !IsStreaming
+        && (!string.IsNullOrWhiteSpace(InputText) || HasPendingImage || HasPendingFiles);
 
     [RelayCommand(CanExecute = nameof(CanSend))]
     private async Task SendAsync()
     {
-        var text = InputText.Trim();
+        var input = InputText.Trim();
+        var text = input;
         var imageBytes = _pendingImageBytes;
+        var attachmentCount = PendingFiles.Count;
+
+        // 只发附件时用文件名当会话标题，别把整块正文当标题
+        var titleSource = input.Length > 0
+            ? input
+            : attachmentCount > 0
+                ? PendingFiles[0].Name
+                : text;
+
+        // 文本附件直接拼进正文：本地模型没有文件通道，历史里也能原样重放
+        if (attachmentCount > 0)
+        {
+            var attachments = BuildAttachmentBlock();
+            text = text.Length == 0 ? attachments : text + "\n\n" + attachments;
+        }
 
         if (text.Length == 0)
         {
@@ -631,6 +670,7 @@ public partial class MainWindowViewModel : ObservableObject
 
         InputText = string.Empty;
         ClearPendingImageCore();
+        ClearPendingFilesCore();
 
         _session!.Messages.Add(new StoredMessage
         {
@@ -646,11 +686,12 @@ public partial class MainWindowViewModel : ObservableObject
         AppLog.Info(
             $"用户提问（{text.Length} 字）"
             + (imageBytes is null ? "" : $"，附图片 {imageBytes.Length / 1024} KB")
-            + $"：{MakeTitle(text)}");
+            + (attachmentCount == 0 ? "" : $"，附文件 {attachmentCount} 个")
+            + $"：{MakeTitle(titleSource)}");
 
         if (_session.Messages.Count == 1)
         {
-            _session.Title = MakeTitle(text);
+            _session.Title = MakeTitle(titleSource);
         }
 
         StatusText = detection ? "正在检测目标…" : "正在生成…";
@@ -707,11 +748,114 @@ public partial class MainWindowViewModel : ObservableObject
         StatusText = "已移除待发送图片";
     }
 
+    /// <summary>文本附件上限：超过就跳过，避免把小模型的上下文直接撑爆。</summary>
+    private const int MaxAttachmentBytes = 256 * 1024;
+
+    [RelayCommand]
+    private async Task AttachFileAsync()
+    {
+        if (FilePicker is null)
+        {
+            return;
+        }
+
+        var paths = await FilePicker();
+        if (paths.Count == 0)
+        {
+            return;
+        }
+
+        var added = 0;
+        foreach (var path in paths)
+        {
+            var info = new FileInfo(path);
+            if (!info.Exists)
+            {
+                continue;
+            }
+
+            if (info.Length > MaxAttachmentBytes)
+            {
+                StatusText = $"「{info.Name}」超过 {MaxAttachmentBytes / 1024} KB，已跳过";
+                continue;
+            }
+
+            try
+            {
+                var bytes = await File.ReadAllBytesAsync(path);
+                if (Array.IndexOf(bytes, (byte)0) >= 0)
+                {
+                    StatusText = $"「{info.Name}」看着是二进制文件，只能插入文本文件";
+                    continue;
+                }
+
+                var content = Encoding.UTF8.GetString(bytes);
+                if (content.Length == 0)
+                {
+                    StatusText = $"「{info.Name}」是空文件";
+                    continue;
+                }
+
+                PendingFiles.Add(new PendingFileViewModel(info.Name, content, info.Length));
+                added++;
+            }
+            catch (Exception ex)
+            {
+                StatusText = $"读取文件失败：{ex.Message}";
+                AppLog.Error("读取附件失败", ex);
+            }
+        }
+
+        if (added > 0)
+        {
+            StatusText = $"已插入 {added} 个文件，发送时随消息一起带给模型";
+        }
+    }
+
+    [RelayCommand]
+    private void RemovePendingFile(PendingFileViewModel? file)
+    {
+        if (file is null || !PendingFiles.Remove(file))
+        {
+            return;
+        }
+
+        StatusText = "已移除附件";
+    }
+
     private void ClearPendingImageCore()
     {
         PendingImage = null;
         PendingImageHint = string.Empty;
         _pendingImageBytes = null;
+    }
+
+    private void ClearPendingFilesCore()
+    {
+        if (PendingFiles.Count > 0)
+        {
+            PendingFiles.Clear();
+        }
+    }
+
+    /// <summary>把待发送附件拼成「【附件：名字】+ 代码块」，直接并入消息正文。</summary>
+    private string BuildAttachmentBlock()
+    {
+        var builder = new StringBuilder();
+        foreach (var file in PendingFiles)
+        {
+            if (builder.Length > 0)
+            {
+                builder.AppendLine();
+            }
+
+            builder.AppendLine($"【附件：{file.Name}】");
+            builder.AppendLine("```");
+            builder.AppendLine(file.Content.TrimEnd());
+            builder.Append("```");
+        }
+
+        return builder.ToString().TrimEnd();
     }
 
     /// <summary>把检测框烧进原图并交给窗口保存。</summary>
@@ -1053,7 +1197,12 @@ public partial class MainWindowViewModel : ObservableObject
     private void ToggleSettings() => IsSettingsOpen = !IsSettingsOpen;
 
     [RelayCommand]
-    private void ToggleLog() => IsLogOpen = !IsLogOpen;
+    private void ToggleLog()
+    {
+        // 日志改成独立窗口后，这里只负责发出请求；窗口关闭时会回写 IsLogOpen
+        IsLogOpen = true;
+        LogRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     [RelayCommand]
     private void CloseLog() => IsLogOpen = false;

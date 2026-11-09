@@ -31,9 +31,26 @@ public partial class MainWindow : Window
         vm.DirectoryPicker = PickDirectoryAsync;
         vm.ImagePicker = PickImageAsync;
         vm.ImageSaver = SaveImageAsync;
+        vm.FilePicker = PickFilesAsync;
 
-        // 启动后直接可以打字，避免焦点停在按钮上
-        this.FindControl<TextBox>("Composer")?.Focus();
+        // 启动后直接可以打字，避免焦点停在按钮上；
+        // Enter 走隧道阶段拦截，否则多行 TextBox 会先把换行插进去
+        if (this.FindControl<TextBox>("Composer") is { } composer)
+        {
+            composer.AddHandler(KeyDownEvent, OnInputKeyDown, RoutingStrategies.Tunnel);
+            composer.Focus();
+
+            // Material 的 TextBox 底部有一层聚焦下划线（MaterialUnderline），卡片里多余。
+            // 主题内部会把它写成本地值，样式选择器压不住，只能拿到实例关掉。
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (composer.GetVisualDescendants().OfType<Control>()
+                        .FirstOrDefault(control => control.Name == "PART_Underline") is { } underline)
+                {
+                    underline.IsVisible = false;
+                }
+            }, DispatcherPriority.Background);
+        }
 
         // 自检模式只用假数据引擎，不读设置、不扫描
         if (!Environment.GetCommandLineArgs().Contains("--selfcheck"))
@@ -77,6 +94,33 @@ public partial class MainWindow : Window
         return files.Count > 0 ? files[0].TryGetLocalPath() : null;
     }
 
+    private async Task<IReadOnlyList<string>> PickFilesAsync()
+    {
+        var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "选择要插入的文件",
+            AllowMultiple = true,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("文本文件")
+                {
+                    Patterns =
+                    [
+                        "*.txt", "*.md", "*.json", "*.csv", "*.log", "*.xml", "*.yml", "*.yaml",
+                        "*.cs", "*.py", "*.js", "*.ts", "*.html", "*.css", "*.sql", "*.ini", "*.toml",
+                    ],
+                },
+                new FilePickerFileType("所有文件") { Patterns = ["*"] },
+            ],
+        });
+
+        return files
+            .Select(file => file.TryGetLocalPath())
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path => path!)
+            .ToList();
+    }
+
     private async Task<bool> SaveImageAsync(byte[] bytes, string suggestedName)
     {
         var file = await StorageProvider.SaveFilePickerAsync(new FilePickerSaveOptions
@@ -102,9 +146,9 @@ public partial class MainWindow : Window
         if (DataContext is MainWindowViewModel vm)
         {
             vm.Messages.CollectionChanged += OnMessagesChanged;
-            vm.Logs.CollectionChanged += OnLogsChanged;
             vm.StreamingContentUpdated += OnStreamingContentUpdated;
             vm.RenameRequested += OnRenameRequested;
+            vm.LogRequested += OnLogRequested;
             vm.ClipboardWriter = CopyTextAsync;
 
             // ScrollViewer 自己会处理滚轮并标记 Handled，只有隧道阶段 + handledEventsToo 才收得到
@@ -170,18 +214,108 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnLogsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    /// <summary>运行日志是独立窗口；已经开着就激活，避免开出好几个。</summary>
+    private void OnLogRequested(object? sender, EventArgs e)
     {
-        if (e.Action != NotifyCollectionChangedAction.Add)
+        if (_logWindow is { } open)
+        {
+            open.Activate();
+            return;
+        }
+
+        _logWindow = new LogWindow { DataContext = DataContext };
+        _logWindow.Closed += (_, _) => _logWindow = null;
+        _logWindow.Show(this);
+    }
+
+    private LogWindow? _logWindow;
+
+    private void OnTitleBarPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
         {
             return;
         }
 
-        // 抽屉没打开时控件不存在/不可见，跟着滚一下也不贵
-        Dispatcher.UIThread.Post(
-            () => this.FindControl<ScrollViewer>("LogScroll")?.ScrollToEnd(),
-            DispatcherPriority.Background);
+        if (e.ClickCount == 2)
+        {
+            ToggleMaximize();
+            return;
+        }
+
+        BeginMoveDrag(e);
     }
+
+    private void OnResizeEdgePressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (_isMaximized
+            || sender is not Border { Tag: string edge }
+            || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+        {
+            return;
+        }
+
+        BeginResizeDrag(Enum.Parse<WindowEdge>(edge), e);
+    }
+
+    private void OnMinimizeClick(object? sender, RoutedEventArgs e) => WindowState = WindowState.Minimized;
+
+    private void OnMaximizeClick(object? sender, RoutedEventArgs e) => ToggleMaximize();
+
+    private void OnCloseClick(object? sender, RoutedEventArgs e) => Close();
+
+    /// <summary>
+    /// 无系统边框时 WindowState.Maximized 会连任务栏一起盖住，
+    /// 这里手动贴到屏幕工作区。
+    /// </summary>
+    private void ToggleMaximize()
+    {
+        var screen = Screens.ScreenFromWindow(this) ?? Screens.Primary;
+        if (screen is null)
+        {
+            return;
+        }
+
+        if (_isMaximized)
+        {
+            if (_restorePosition is { } restore)
+            {
+                Position = restore;
+                Width = _restoreSize.Width;
+                Height = _restoreSize.Height;
+            }
+
+            _isMaximized = false;
+        }
+        else
+        {
+            _restorePosition = Position;
+            _restoreSize = new Size(Width, Height);
+
+            var area = screen.WorkingArea;
+            var scale = screen.Scaling;
+            Position = new PixelPoint(area.X, area.Y);
+            Width = area.Width / scale;
+            Height = area.Height / scale;
+            _isMaximized = true;
+        }
+
+        UpdateMaximizeGlyph();
+    }
+
+    private void UpdateMaximizeGlyph()
+    {
+        if (this.FindControl<TextBlock>("MaximizeGlyph") is { } glyph)
+        {
+            glyph.Text = _isMaximized ? "❐" : "□";
+        }
+    }
+
+    private bool _isMaximized;
+
+    private PixelPoint? _restorePosition;
+
+    private Size _restoreSize;
 
     private void OnStreamingContentUpdated(object? sender, EventArgs e)
         => Dispatcher.UIThread.Post(() => ScrollToTail(false), DispatcherPriority.Background);
@@ -296,6 +430,12 @@ public partial class MainWindow : Window
             return;
         }
 
+        // Shift+Enter 留给 TextBox 自己换行
+        if (e.KeyModifiers.HasFlag(KeyModifiers.Shift))
+        {
+            return;
+        }
+
         if (vm.SendCommand.CanExecute(null))
         {
             vm.SendCommand.Execute(null);
@@ -404,11 +544,4 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnRemoveDirectoryClick(object? sender, RoutedEventArgs e)
-    {
-        if (sender is Button { Tag: string path } && DataContext is MainWindowViewModel vm)
-        {
-            vm.RemoveDirectoryCommand.Execute(path);
-        }
-    }
 }

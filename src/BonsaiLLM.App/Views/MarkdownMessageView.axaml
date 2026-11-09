@@ -8,6 +8,25 @@
 
   <Border Classes="bubble" Classes.user="{Binding IsUser}">
     <StackPanel Spacing="8">
+      <!-- 特化消息：先给模型原始输出，再给渲染后的坐标结果 -->
+      <Border IsVisible="{Binding ShowDetectionRaw}"
+              Background="#F9FAFB"
+              BorderBrush="#E5E7EB"
+              BorderThickness="1"
+              CornerRadius="6"
+              Padding="8,6">
+        <StackPanel Spacing="2">
+          <TextBlock Text="模型原始输出"
+                     FontSize="10"
+                     Foreground="#9CA3AF" />
+          <SelectableTextBlock Text="{Binding Text}"
+                               TextWrapping="Wrap"
+                               FontSize="11"
+                               FontFamily="Consolas,monospace"
+                               Foreground="#4B5563" />
+        </StackPanel>
+      </Border>
+
       <!-- 特化检测：原图 + 坐标叠加 -->
       <views:DetectionOverlayView IsVisible="{Binding ShowDetection}" />
 
@@ -31,17 +50,6 @@
       <!-- MarkdownViewer 在自适应宽度容器里测量为 0，必须由外部给满宽度 -->
       <mv:MarkdownViewer Name="PART_Viewer"
                          IsVisible="{Binding ShowMarkdown}" />
-
-      <!-- 特化消息保留模型原始输出，绝不丢 -->
-      <Expander Header="原始输出"
-                FontSize="11"
-                IsVisible="{Binding ShowDetection}"
-                IsExpanded="False">
-        <TextBlock Text="{Binding Text}"
-                   TextWrapping="Wrap"
-                   FontSize="11"
-                   Foreground="#6B7280" />
-      </Expander>
     </StackPanel>
   </Border>
 

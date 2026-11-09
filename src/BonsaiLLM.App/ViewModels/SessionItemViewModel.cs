@@ -35,4 +35,3 @@ public partial class SessionItemViewModel : ObservableObject
     }
 }
 
-public sealed record ContextModeOption(ContextMode Mode, string Name, string Note);

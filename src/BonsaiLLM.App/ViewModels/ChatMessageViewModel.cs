@@ -48,6 +48,9 @@ public partial class ChatMessageViewModel : ObservableObject
 
     public bool ShowDetection => IsDetection;
 
+    /// <summary>特化消息先展示模型原始输出，再展示渲染后的坐标结果。</summary>
+    public bool ShowDetectionRaw => IsDetection && Text.Length > 0;
+
     public bool ShowMarkdown => !IsUser && !IsDetection;
 
     /// <summary>MarkdownViewer 的流式会话由 View 订阅这些事件驱动，避免整篇重渲染。</summary>
@@ -97,6 +100,7 @@ public partial class ChatMessageViewModel : ObservableObject
         OnPropertyChanged(nameof(DetectionLabel));
         OnPropertyChanged(nameof(DetectionSummary));
         OnPropertyChanged(nameof(ShowDetection));
+        OnPropertyChanged(nameof(ShowDetectionRaw));
         OnPropertyChanged(nameof(ShowMarkdown));
     }
 

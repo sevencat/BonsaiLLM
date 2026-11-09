@@ -1,4 +1,4 @@
-<Window xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:BonsaiLLM.App.ViewModels"
         xmlns:views="using:BonsaiLLM.App.Views"
@@ -9,6 +9,7 @@
         Width="1080"
         Height="760"
         FontSize="{Binding FontSize}"
+        WindowDecorations="None"
         WindowStartupLocation="CenterScreen">
 
   <Window.Styles>
@@ -53,476 +54,581 @@
       <Setter Property="Margin" Value="0,1" />
       <Setter Property="CornerRadius" Value="6" />
     </Style>
+
+    <!-- 自绘标题栏的窗口按钮 -->
+    <Style Selector="Button.chrome">
+      <Setter Property="Width" Value="46" />
+      <Setter Property="Height" Value="38" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="0" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+      <Setter Property="Foreground" Value="#4B5563" />
+    </Style>
+
+    <Style Selector="Button.chrome:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#E5E7EB" />
+    </Style>
+
+    <Style Selector="Button.chrome.close:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#E81123" />
+    </Style>
+
+    <Style Selector="Button.chrome.close:pointerover TextBlock">
+      <Setter Property="Foreground" Value="White" />
+    </Style>
+
+    <!-- 圆形图标按钮（输入区「+」、顶栏清空） -->
+    <Style Selector="Button.iconGhost">
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Foreground" Value="#4B5563" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Button.iconGhost:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#EEF0F3" />
+    </Style>
+
+    <!-- 圆形发送按钮 -->
+    <Style Selector="Button.send">
+      <Setter Property="Width" Value="32" />
+      <Setter Property="Height" Value="32" />
+      <Setter Property="Padding" Value="0" />
+      <Setter Property="CornerRadius" Value="16" />
+      <Setter Property="Background" Value="#3B5BDB" />
+      <Setter Property="Foreground" Value="White" />
+      <Setter Property="HorizontalContentAlignment" Value="Center" />
+      <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+
+    <Style Selector="Button.send:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#2F4BC7" />
+    </Style>
+
+    <Style Selector="Button.send:disabled">
+      <Setter Property="Background" Value="#E9EBF0" />
+      <Setter Property="Foreground" Value="#A0A6B1" />
+    </Style>
+
+    <Style Selector="Button.send:disabled /template/ ContentPresenter">
+      <Setter Property="Background" Value="#E9EBF0" />
+    </Style>
+
+    <!-- 卡片里的无边框输入框 -->
+    <Style Selector="TextBox.composerInput">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="BorderThickness" Value="0" />
+      <Setter Property="Padding" Value="4,2" />
+      <Setter Property="MinHeight" Value="36" />
+      <Setter Property="MaxHeight" Value="150" />
+    </Style>
+
+    <!-- 附件小标签 -->
+    <Style Selector="Border.attachment">
+      <Setter Property="Background" Value="White" />
+      <Setter Property="BorderBrush" Value="#E5E7EB" />
+      <Setter Property="BorderThickness" Value="1" />
+      <Setter Property="CornerRadius" Value="8" />
+      <Setter Property="Padding" Value="8,4" />
+      <Setter Property="Margin" Value="0,0,6,6" />
+    </Style>
+
+
+    <!-- 侧栏底部入口 -->
+    <Style Selector="Button.sidebarAction">
+      <Setter Property="Background" Value="Transparent" />
+      <Setter Property="Padding" Value="8,5" />
+      <Setter Property="HorizontalContentAlignment" Value="Left" />
+      <Setter Property="FontSize" Value="12" />
+      <Setter Property="Foreground" Value="#374151" />
+    </Style>
+
+    <Style Selector="Button.sidebarAction:pointerover /template/ ContentPresenter">
+      <Setter Property="Background" Value="#EEF0F3" />
+    </Style>
   </Window.Styles>
 
-  <Grid ColumnDefinitions="236,*">
+  <Grid RowDefinitions="40,*"
+        Background="White">
 
-    <!-- 会话侧栏 -->
-    <Border Grid.Column="0" Background="#FAFAFB" BorderThickness="0,0,1,0" BorderBrush="#E5E7EB">
-      <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="12,14">
-        <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
-          <TextBlock Text="会话" FontWeight="SemiBold" VerticalAlignment="Center" />
-          <Button Grid.Column="1"
-                  Content="新建"
-                  FontSize="12"
-                  Padding="10,2"
-                  Command="{Binding NewSessionCommand}" />
-          <Button Grid.Column="2"
-                  Content="⋮"
-                  FontSize="14"
-                  Padding="8,0"
-                  ToolTip.Tip="更多会话操作">
-            <Button.Flyout>
-              <MenuFlyout Placement="BottomEdgeAlignedRight">
-                <MenuItem Header="重命名"
-                          Command="{Binding BeginRenameCommand}" />
-                <MenuItem Header="清空消息"
-                          Command="{Binding ClearSessionCommand}" />
-                <MenuItem Header="删除会话"
-                          Command="{Binding DeleteCurrentSessionCommand}" />
-              </MenuFlyout>
-            </Button.Flyout>
+    <!-- 自绘标题栏（无系统边框，保留阴影与贴边） -->
+    <Border Grid.Row="0"
+            Background="#FAFAFB"
+            BorderThickness="0,0,0,1"
+            BorderBrush="#E5E7EB"
+            PointerPressed="OnTitleBarPressed">
+      <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+        <StackPanel Grid.Column="0"
+                    Orientation="Horizontal"
+                    Spacing="8"
+                    Margin="12,0,0,0"
+                    VerticalAlignment="Center">
+          <Image Source="/Assets/logo.png"
+                 Width="32"
+                 Height="32"
+                 Stretch="Uniform"
+                 RenderOptions.BitmapInterpolationMode="HighQuality" />
+          <TextBlock Text="BonsaiLLM" FontSize="14" FontWeight="SemiBold"  VerticalAlignment="Center"/>
+          <TextBlock Text="{Binding StatusText}"
+                     Classes="muted"
+                     FontSize="11"
+                     VerticalAlignment="Center"
+                     MaxWidth="320"
+                     TextTrimming="CharacterEllipsis" />
+        </StackPanel>
+
+        <StackPanel Grid.Column="2" Orientation="Horizontal">
+          <Button Classes="chrome"
+                  Click="OnMinimizeClick"
+                  AutomationProperties.Name="最小化"
+                  ToolTip.Tip="最小化">
+            <TextBlock Text="─" FontSize="11" />
           </Button>
-        </Grid>
-
-        <TextBox Grid.Row="1"
-                 Name="RenameBox"
-                 Text="{Binding SessionTitleDraft}"
-                 PlaceholderText="会话名称，回车确认"
-                 FontSize="12"
-                 Margin="0,8,0,0"
-                 IsVisible="{Binding IsRenaming}"
-                 KeyDown="OnRenameKeyDown" />
-
-        <ListBox Grid.Row="2"
-                 Classes="sessionList"
-                 Margin="0,10"
-                 ItemsSource="{Binding Sessions}"
-                 SelectedItem="{Binding CurrentSession}">
-          <ListBox.ItemTemplate>
-            <DataTemplate x:DataType="vm:SessionItemViewModel">
-              <StackPanel Spacing="1">
-                <TextBlock Text="{Binding Title}"
-                           FontSize="13"
-                           TextTrimming="CharacterEllipsis" />
-                <TextBlock Text="{Binding Subtitle}" Classes="muted" />
-              </StackPanel>
-            </DataTemplate>
-          </ListBox.ItemTemplate>
-        </ListBox>
-
-        <!-- 侧栏底部：预留给内存 / CPU / GPU 占用等运行时指标 -->
-        <Border Grid.Row="3" Margin="0,8,0,0" />
+          <Button Classes="chrome"
+                  Click="OnMaximizeClick"
+                  AutomationProperties.Name="最大化"
+                  ToolTip.Tip="最大化">
+            <TextBlock Name="MaximizeGlyph" Text="□" FontSize="11" />
+          </Button>
+          <Button Classes="chrome close"
+                  Click="OnCloseClick"
+                  AutomationProperties.Name="关闭窗口"
+                  ToolTip.Tip="关闭">
+            <TextBlock Text="✕" FontSize="11" />
+          </Button>
+        </StackPanel>
       </Grid>
     </Border>
 
-    <!-- 右侧主区 -->
-    <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto,Auto">
+    <Grid Grid.Row="1" ColumnDefinitions="236,*">
 
-      <!-- 顶栏：状态 / 模型选择 / 上下文模式 / 操作 -->
-      <Border Grid.Row="0" Padding="20,12" BorderThickness="0,0,0,1" BorderBrush="#E5E7EB">
-        <Grid RowDefinitions="Auto,Auto,Auto" RowSpacing="8">
-          <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="16">
-            <StackPanel Grid.Column="0" Spacing="2" VerticalAlignment="Center">
-              <TextBlock Text="BonsaiLLM" FontSize="15" FontWeight="SemiBold" />
-              <TextBlock Text="{Binding StatusText}" Classes="muted" MaxWidth="300" />
-            </StackPanel>
-
-            <ComboBox Grid.Column="1"
-                      HorizontalAlignment="Stretch"
-                      MaxWidth="520"
-                      PlaceholderText="选择模型"
-                      ItemsSource="{Binding Models}"
-                      SelectedItem="{Binding SelectedModel}">
-              <ComboBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:ModelItemViewModel">
-                  <StackPanel Spacing="1">
-                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding Subtitle}" Classes="muted" />
-                  </StackPanel>
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-
-            <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-              <Button Content="重新扫描" Command="{Binding RescanCommand}" />
-              <Button Content="日志" Command="{Binding ToggleLogCommand}" ToolTip.Tip="查看运行日志" />
-              <Button Content="设置" Command="{Binding ToggleSettingsCommand}" />
-            </StackPanel>
+      <!-- 会话侧栏 -->
+      <Border Grid.Column="0" Background="#FAFAFB" BorderThickness="0,0,1,0" BorderBrush="#E5E7EB">
+        <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="12,14">
+          <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+            <TextBlock Text="会话" FontWeight="SemiBold" VerticalAlignment="Center" />
+            <Button Grid.Column="1"
+                    Content="新建"
+                    FontSize="12"
+                    Padding="10,2"
+                    Command="{Binding NewSessionCommand}" />
+            <Button Grid.Column="2"
+                    Content="⋮"
+                    FontSize="14"
+                    Padding="8,0"
+                    ToolTip.Tip="更多会话操作">
+              <Button.Flyout>
+                <MenuFlyout Placement="BottomEdgeAlignedRight">
+                  <MenuItem Header="重命名"
+                            Command="{Binding BeginRenameCommand}" />
+                  <MenuItem Header="清空消息"
+                            Command="{Binding ClearSessionCommand}" />
+                  <MenuItem Header="删除会话"
+                            Command="{Binding DeleteCurrentSessionCommand}" />
+                </MenuFlyout>
+              </Button.Flyout>
+            </Button>
           </Grid>
 
-          <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
-            <ComboBox Grid.Column="0"
-                      MinWidth="140"
-                      ItemsSource="{Binding ContextModeOptions}"
-                      SelectedItem="{Binding SelectedContextMode}">
-              <ComboBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:ContextModeOption">
-                  <TextBlock Text="{Binding Name}" />
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
+          <TextBox Grid.Row="1"
+                   Name="RenameBox"
+                   Text="{Binding SessionTitleDraft}"
+                   PlaceholderText="会话名称，回车确认"
+                   FontSize="12"
+                   Margin="0,8,0,0"
+                   IsVisible="{Binding IsRenaming}"
+                   KeyDown="OnRenameKeyDown" />
 
-            <TextBlock Grid.Column="2"
-                       Text="{Binding StatsText}"
-                       Classes="muted"
-                       VerticalAlignment="Center"
-                       HorizontalAlignment="Right" />
-          </Grid>
+          <ListBox Grid.Row="2"
+                   Classes="sessionList"
+                   Margin="0,10"
+                   ItemsSource="{Binding Sessions}"
+                   SelectedItem="{Binding CurrentSession}">
+            <ListBox.ItemTemplate>
+              <DataTemplate x:DataType="vm:SessionItemViewModel">
+                <StackPanel Spacing="1">
+                  <TextBlock Text="{Binding Title}"
+                             FontSize="13"
+                             TextTrimming="CharacterEllipsis" />
+                  <TextBlock Text="{Binding Subtitle}" Classes="muted" />
+                </StackPanel>
+              </DataTemplate>
+            </ListBox.ItemTemplate>
+          </ListBox>
 
-          <ProgressBar Grid.Row="2"
-                       Minimum="0"
-                       Maximum="1"
-                       Value="{Binding LoadProgress}"
-                       IsVisible="{Binding IsBusy}"
-                       Height="3" />
+          <!-- 侧栏底部：设置 / 日志 -->
+          <Border Grid.Row="3"
+                  Margin="0,8,0,0"
+                  Padding="0,8,0,0"
+                  BorderThickness="0,1,0,0"
+                  BorderBrush="#E5E7EB">
+            <StackPanel Orientation="Horizontal" Spacing="4">
+              <Button Classes="sidebarAction"
+                      Command="{Binding ToggleSettingsCommand}"
+                      AutomationProperties.Name="设置"
+                      ToolTip.Tip="设置">
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                  <TextBlock Text="⚙" FontSize="13" VerticalAlignment="Center" />
+                  <TextBlock Text="设置" FontSize="12" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+              <Button Classes="sidebarAction"
+                      Command="{Binding ToggleLogCommand}"
+                      AutomationProperties.Name="日志"
+                      ToolTip.Tip="查看运行日志">
+                <StackPanel Orientation="Horizontal" Spacing="7">
+                  <TextBlock Text="☰" FontSize="13" VerticalAlignment="Center" />
+                  <TextBlock Text="日志" FontSize="12" VerticalAlignment="Center" />
+                </StackPanel>
+              </Button>
+            </StackPanel>
+          </Border>
         </Grid>
       </Border>
 
-      <!-- 对话区 -->
-      <Grid Grid.Row="1" IsVisible="{Binding !IsEmptyVisible}">
-        <ScrollViewer Name="ChatScroll"
-                      Padding="20,12"
-                      ScrollChanged="OnChatScrollChanged">
-          <ItemsControl ItemsSource="{Binding Messages}">
-            <ItemsControl.ItemsPanel>
-              <ItemsPanelTemplate>
-                <VirtualizingStackPanel />
-              </ItemsPanelTemplate>
-            </ItemsControl.ItemsPanel>
-            <ItemsControl.ItemTemplate>
-              <DataTemplate x:DataType="vm:ChatMessageViewModel">
-                <StackPanel>
-                  <views:MarkdownMessageView />
-                  <StackPanel Orientation="Horizontal"
-                              Spacing="6"
-                              Margin="6,-4,0,6"
-                              IsVisible="{Binding IsAssistant}">
-                    <Button Content="复制"
-                            FontSize="11"
-                            Padding="8,1"
-                            Tag="{Binding}"
-                            Click="OnCopyMessage" />
-                    <Button Content="重新生成"
-                            FontSize="11"
-                            Padding="8,1"
-                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RegenerateCommand}"
-                            CommandParameter="{Binding}" />
-                    <Button Content="导出标注图"
-                            FontSize="11"
-                            Padding="8,1"
-                            IsVisible="{Binding ShowDetection}"
-                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SaveDetectionImageCommand}"
-                            CommandParameter="{Binding}" />
-                    <Button Content="删除"
-                            FontSize="11"
-                            Padding="8,1"
-                            Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeleteMessageCommand}"
-                            CommandParameter="{Binding}" />
-                  </StackPanel>
-                </StackPanel>
-              </DataTemplate>
-            </ItemsControl.ItemTemplate>
-          </ItemsControl>
-        </ScrollViewer>
+      <!-- 右侧主区 -->
+      <Grid Grid.Column="1" RowDefinitions="Auto,*,Auto">
 
-        <!-- 用户上滚后停止跟随，改为显式的「回到底部」 -->
-        <Button Name="ScrollToBottomButton"
-                Content="回到底部 ↓"
-                FontSize="12"
-                Padding="12,4"
-                IsVisible="False"
-                HorizontalAlignment="Center"
-                VerticalAlignment="Bottom"
-                Margin="0,0,0,14"
-                Click="OnScrollToBottomClick" />
-      </Grid>
+        <!-- 顶栏：模型选择 / 携带历史 / 上下文统计（一行） -->
+        <Border Grid.Row="0" Padding="20,12" BorderThickness="0,0,0,1" BorderBrush="#E5E7EB">
+          <Grid RowDefinitions="Auto,Auto" RowSpacing="8">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="14">
+              <ComboBox Grid.Column="0"
+                        HorizontalAlignment="Left"
+                        Width="340"
+                        PlaceholderText="选择模型"
+                        ItemsSource="{Binding Models}"
+                        SelectedItem="{Binding SelectedModel}">
+                <ComboBox.ItemTemplate>
+                  <DataTemplate x:DataType="vm:ModelItemViewModel">
+                    <StackPanel Spacing="1">
+                      <TextBlock Text="{Binding Title}" FontWeight="SemiBold" />
+                      <TextBlock Text="{Binding Subtitle}" Classes="muted" />
+                    </StackPanel>
+                  </DataTemplate>
+                </ComboBox.ItemTemplate>
+              </ComboBox>
 
-      <!-- 模型已就绪 -->
-      <Border Grid.Row="1" IsVisible="{Binding ShowReadyHint}" Padding="40">
-        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
-          <TextBlock Text="模型已就绪"
-                     FontSize="18"
-                     FontWeight="SemiBold"
-                     HorizontalAlignment="Center" />
-          <TextBlock Text="在下面输入消息开始对话"
-                     Classes="muted"
-                     FontSize="13"
-                     HorizontalAlignment="Center" />
-        </StackPanel>
-      </Border>
+              <CheckBox Grid.Column="1"
+                        Content="携带历史"
+                        IsChecked="{Binding CarryHistory}"
+                        VerticalAlignment="Center"
+                        ToolTip.Tip="勾选后把之前的问答一起发给模型；默认只发当前问题" />
 
-      <!-- 空状态 -->
-      <Border Grid.Row="1" IsVisible="{Binding IsEmptyVisible}" Padding="40">
-        <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="420" Spacing="10">
-          <TextBlock Text="{Binding EmptyTitle}"
-                     FontSize="20"
-                     FontWeight="SemiBold"
-                     HorizontalAlignment="Center" />
-          <TextBlock Text="{Binding EmptyHint}"
-                     Classes="muted"
-                     FontSize="13"
-                     TextAlignment="Center" />
-          <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Margin="0,8,0,0">
-            <Button Content="添加模型目录" Command="{Binding AddDirectoryCommand}" />
-            <Button Content="打开设置" Command="{Binding ToggleSettingsCommand}" />
-          </StackPanel>
-        </StackPanel>
-      </Border>
+              <Button Grid.Column="3"
+                      Classes="iconGhost"
+                      Command="{Binding ClearSessionCommand}"
+                      AutomationProperties.Name="清空消息"
+                      ToolTip.Tip="清空当前会话的消息">
+                <TextBlock Text="&#xE74D;"
+                           FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets"
+                           FontSize="14" />
+              </Button>
+            </Grid>
 
-      <!-- 日志抽屉 -->
-      <Border Grid.Row="2"
-              Name="LogDrawer"
-              IsVisible="{Binding IsLogOpen}"
-              Height="190"
-              Background="#FBFBFC"
-              BorderThickness="0,1,0,0"
-              BorderBrush="#E5E7EB">
-        <Grid RowDefinitions="Auto,*" Margin="16,8,16,10">
-          <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
-            <TextBlock Text="运行日志"
-                       FontWeight="SemiBold"
-                       FontSize="12"
-                       VerticalAlignment="Center" />
-            <TextBlock Grid.Column="1"
-                       Text="{Binding LogSummary}"
-                       Classes="muted"
-                       VerticalAlignment="Center" />
-            <Button Grid.Column="2"
-                    Content="复制"
-                    FontSize="11"
-                    Padding="10,2"
-                    Command="{Binding CopyLogsCommand}" />
-            <Button Grid.Column="3"
-                    Content="清空"
-                    FontSize="11"
-                    Padding="10,2"
-                    Command="{Binding ClearLogsCommand}" />
-            <Button Grid.Column="4"
-                    Content="关闭"
-                    FontSize="11"
-                    Padding="10,2"
-                    Command="{Binding CloseLogCommand}" />
+            <ProgressBar Grid.Row="1"
+                         Minimum="0"
+                         Maximum="1"
+                         Value="{Binding LoadProgress}"
+                         IsVisible="{Binding IsBusy}"
+                         Height="3" />
           </Grid>
+        </Border>
 
-          <ScrollViewer Grid.Row="1" Name="LogScroll" Margin="0,6,0,0">
-            <ItemsControl ItemsSource="{Binding Logs}">
+        <!-- 对话区 -->
+        <Grid Grid.Row="1" IsVisible="{Binding !IsEmptyVisible}">
+          <ScrollViewer Name="ChatScroll"
+                        Padding="20,12"
+                        ScrollChanged="OnChatScrollChanged">
+            <ItemsControl ItemsSource="{Binding Messages}">
+              <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                  <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+              </ItemsControl.ItemsPanel>
               <ItemsControl.ItemTemplate>
-                <DataTemplate x:DataType="vm:LogEntryViewModel">
-                  <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8" Margin="0,1">
-                    <TextBlock Text="{Binding TimeText}"
-                               FontFamily="Consolas,monospace"
-                               FontSize="11"
-                               Foreground="#9CA3AF" />
-                    <TextBlock Grid.Column="1"
-                               Text="{Binding LevelText}"
-                               FontFamily="Consolas,monospace"
-                               FontSize="11"
-                               Foreground="{Binding Foreground}" />
-                    <TextBlock Grid.Column="2"
-                               Text="{Binding Message}"
-                               FontFamily="Consolas,monospace"
-                               FontSize="11"
-                               TextWrapping="Wrap"
-                               Foreground="{Binding Foreground}" />
-                  </Grid>
+                <DataTemplate x:DataType="vm:ChatMessageViewModel">
+                  <StackPanel>
+                    <views:MarkdownMessageView />
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="6"
+                                Margin="6,-4,0,6"
+                                IsVisible="{Binding IsAssistant}">
+                      <Button Content="复制"
+                              FontSize="11"
+                              Padding="8,1"
+                              Tag="{Binding}"
+                              Click="OnCopyMessage" />
+                      <Button Content="重新生成"
+                              FontSize="11"
+                              Padding="8,1"
+                              Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).RegenerateCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Content="导出标注图"
+                              FontSize="11"
+                              Padding="8,1"
+                              IsVisible="{Binding ShowDetection}"
+                              Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).SaveDetectionImageCommand}"
+                              CommandParameter="{Binding}" />
+                      <Button Content="删除"
+                              FontSize="11"
+                              Padding="8,1"
+                              Command="{Binding $parent[Window].((vm:MainWindowViewModel)DataContext).DeleteMessageCommand}"
+                              CommandParameter="{Binding}" />
+                    </StackPanel>
+                  </StackPanel>
                 </DataTemplate>
               </ItemsControl.ItemTemplate>
             </ItemsControl>
           </ScrollViewer>
+
+          <!-- 用户上滚后停止跟随，改为显式的「回到底部」 -->
+          <Button Name="ScrollToBottomButton"
+                  Content="回到底部 ↓"
+                  FontSize="12"
+                  Padding="12,4"
+                  IsVisible="False"
+                  HorizontalAlignment="Center"
+                  VerticalAlignment="Bottom"
+                  Margin="0,0,0,14"
+                  Click="OnScrollToBottomClick" />
         </Grid>
-      </Border>
 
-      <!-- 输入区 -->
-      <Border Grid.Row="3" Classes="composer">
-        <StackPanel Spacing="8">
-          <!-- 待发送图片 -->
-          <Border IsVisible="{Binding HasPendingImage}"
-                  Background="#F3F4F6"
-                  CornerRadius="8"
-                  Padding="8">
-            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="10">
-              <Image Source="{Binding PendingImage}"
-                     MaxWidth="120"
-                     MaxHeight="72"
-                     Stretch="Uniform"
-                     VerticalAlignment="Center" />
-              <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
-                <TextBlock Text="待发送图片" FontSize="12" FontWeight="SemiBold" />
-                <TextBlock Text="{Binding PendingImageHint}" Classes="muted" FontSize="11" />
+        <!-- 模型已就绪 -->
+        <Border Grid.Row="1" IsVisible="{Binding ShowReadyHint}" Padding="40">
+          <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" Spacing="6">
+            <TextBlock Text="模型已就绪"
+                       FontSize="18"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="在下面输入消息开始对话"
+                       Classes="muted"
+                       FontSize="13"
+                       HorizontalAlignment="Center" />
+          </StackPanel>
+        </Border>
+
+        <!-- 空状态 -->
+        <Border Grid.Row="1" IsVisible="{Binding IsEmptyVisible}" Padding="40">
+          <StackPanel VerticalAlignment="Center" HorizontalAlignment="Center" MaxWidth="420" Spacing="10">
+            <TextBlock Text="{Binding EmptyTitle}"
+                       FontSize="20"
+                       FontWeight="SemiBold"
+                       HorizontalAlignment="Center" />
+            <TextBlock Text="{Binding EmptyHint}"
+                       Classes="muted"
+                       FontSize="13"
+                       TextAlignment="Center" />
+            <StackPanel Orientation="Horizontal" Spacing="10" HorizontalAlignment="Center" Margin="0,8,0,0">
+              <Button Content="添加模型目录" Command="{Binding AddDirectoryCommand}" />
+              <Button Content="打开设置" Command="{Binding ToggleSettingsCommand}" />
+            </StackPanel>
+          </StackPanel>
+        </Border>
+
+        <!-- 输入区 -->
+        <Border Grid.Row="2" Classes="composer">
+          <StackPanel Spacing="8">
+            <!-- 待发送的图片与文件 -->
+            <Border IsVisible="{Binding HasPendingAttachments}"
+                    Background="#F3F4F6"
+                    CornerRadius="10"
+                    Padding="10">
+              <StackPanel Spacing="8">
+                <Grid ColumnDefinitions="Auto,*,Auto"
+                      ColumnSpacing="10"
+                      IsVisible="{Binding HasPendingImage}">
+                  <Image Source="{Binding PendingImage}"
+                         MaxWidth="120"
+                         MaxHeight="72"
+                         Stretch="Uniform"
+                         VerticalAlignment="Center" />
+                  <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="2">
+                    <TextBlock Text="待发送图片" FontSize="12" FontWeight="SemiBold" />
+                    <TextBlock Text="{Binding PendingImageHint}" Classes="muted" FontSize="11" />
+                  </StackPanel>
+                  <Button Grid.Column="2"
+                          Content="移除"
+                          FontSize="11"
+                          Padding="10,2"
+                          VerticalAlignment="Center"
+                          Command="{Binding RemovePendingImageCommand}" />
+                </Grid>
+
+                <ItemsControl ItemsSource="{Binding PendingFiles}" IsVisible="{Binding HasPendingFiles}">
+                  <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate>
+                      <WrapPanel />
+                    </ItemsPanelTemplate>
+                  </ItemsControl.ItemsPanel>
+                  <ItemsControl.ItemTemplate>
+                    <DataTemplate x:CompileBindings="False">
+                      <Border Classes="attachment">
+                        <StackPanel Orientation="Horizontal" Spacing="6">
+                          <TextBlock Text="&#xE7C3;"
+                                     FontFamily="Segoe Fluent Icons,Segoe MDL2 Assets"
+                                     FontSize="12"
+                                     Foreground="#4B5563"
+                                     VerticalAlignment="Center" />
+                          <TextBlock Text="{Binding Name}" FontSize="12" VerticalAlignment="Center" />
+                          <TextBlock Text="{Binding SizeText}" Classes="muted" FontSize="11" VerticalAlignment="Center" />
+                          <Button Content="✕"
+                                  FontSize="10"
+                                  Padding="6,0"
+                                  Background="Transparent"
+                                  Command="{Binding $parent[ItemsControl].DataContext.RemovePendingFileCommand}"
+                                  CommandParameter="{Binding}" />
+                        </StackPanel>
+                      </Border>
+                    </DataTemplate>
+                  </ItemsControl.ItemTemplate>
+                </ItemsControl>
               </StackPanel>
-              <Button Grid.Column="2"
-                      Content="移除"
-                      FontSize="11"
-                      Padding="10,2"
-                      VerticalAlignment="Center"
-                      Command="{Binding RemovePendingImageCommand}" />
-            </Grid>
-          </Border>
+            </Border>
 
-          <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="10">
-            <Button Grid.Column="0"
-                    Content="图片"
-                    Command="{Binding AttachImageCommand}"
-                    IsEnabled="{Binding CanAttachImage}"
-                    ToolTip.Tip="选择图片（需要带视觉投影的模型）" />
+            <!-- 输入框与发送按钮同一行，token 统计落在右下角 -->
+            <Border Background="White"
+                    BorderBrush="#E5E7EB"
+                    BorderThickness="1"
+                    CornerRadius="16"
+                    Padding="10,8">
+              <Grid RowDefinitions="Auto,Auto" RowSpacing="2">
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                  <Button Grid.Column="0"
+                          Classes="iconGhost"
+                          VerticalAlignment="Bottom"
+                          AutomationProperties.Name="插入附件"
+                          ToolTip.Tip="插入图片或文本文件">
+                    <Button.Flyout>
+                      <MenuFlyout Placement="TopEdgeAlignedLeft">
+                        <MenuItem Header="插入图片…"
+                                  Command="{Binding AttachImageCommand}"
+                                  IsEnabled="{Binding CanAttachImage}" />
+                        <MenuItem Header="插入文件…" Command="{Binding AttachFileCommand}" />
+                      </MenuFlyout>
+                    </Button.Flyout>
+                    <TextBlock Text="＋" FontSize="16" VerticalAlignment="Center" />
+                  </Button>
 
-            <TextBox Grid.Column="1"
-                     Name="Composer"
-                     Text="{Binding InputText}"
-                     PlaceholderText="输入消息，回车发送"
-                     AcceptsReturn="False"
-                     IsEnabled="{Binding CanChat}"
-                     KeyDown="OnInputKeyDown" />
+                  <TextBox Grid.Column="1"
+                           Name="Composer"
+                           Classes="composerInput"
+                           Text="{Binding InputText}"
+                           PlaceholderText="输入消息，Enter 发送"
+                           ToolTip.Tip="Enter 发送，Shift+Enter 换行"
+                           AcceptsReturn="True"
+                           TextWrapping="Wrap"
+                           IsEnabled="{Binding CanChat}"
+                           VerticalAlignment="Center" />
 
-            <Button Grid.Column="2"
-                    Content="发送"
-                    Command="{Binding SendCommand}"
-                    IsVisible="{Binding !IsStreaming}" />
+                  <Button Grid.Column="2"
+                          Classes="send"
+                          VerticalAlignment="Bottom"
+                          Command="{Binding SendCommand}"
+                          IsVisible="{Binding !IsStreaming}"
+                          AutomationProperties.Name="发送"
+                          ToolTip.Tip="发送（Enter）">
+                    <TextBlock Text="↑" FontSize="15" FontWeight="SemiBold" />
+                  </Button>
 
-            <Button Grid.Column="3"
-                    Content="停止"
-                    Command="{Binding StopCommand}"
-                    IsVisible="{Binding IsStreaming}" />
-          </Grid>
-        </StackPanel>
-      </Border>
+                  <Button Grid.Column="2"
+                          Classes="send"
+                          VerticalAlignment="Bottom"
+                          Command="{Binding StopCommand}"
+                          IsVisible="{Binding IsStreaming}"
+                          AutomationProperties.Name="停止"
+                          ToolTip.Tip="停止生成">
+                    <TextBlock Text="■" FontSize="10" />
+                  </Button>
+                </Grid>
+
+                <TextBlock Grid.Row="1"
+                           Text="{Binding StatsText}"
+                           Classes="muted"
+                           FontSize="11"
+                           HorizontalAlignment="Right"
+                           IsVisible="{Binding HasStatsText}" />
+              </Grid>
+            </Border>
+          </StackPanel>
+        </Border>
+      </Grid>
+
+      <!-- 设置面板（独立组件） -->
+      <views:SettingsPanel Grid.ColumnSpan="2" IsVisible="{Binding IsSettingsOpen}" />
     </Grid>
 
-    <!-- 设置面板 -->
-    <Border Grid.ColumnSpan="2"
-            IsVisible="{Binding IsSettingsOpen}"
-            Background="#66000000">
-      <Border Width="580"
-              MaxHeight="660"
-              CornerRadius="16"
-              Background="White"
-              Padding="24"
-              HorizontalAlignment="Center"
-              VerticalAlignment="Center"
-              BoxShadow="0 12 40 0 #40000000">
-        <ScrollViewer>
-          <StackPanel Spacing="4">
-            <Grid ColumnDefinitions="*,Auto">
-              <TextBlock Text="设置" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
-              <Button Grid.Column="1" Content="关闭" Command="{Binding CloseSettingsCommand}" />
-            </Grid>
-
-            <TextBlock Text="推理后端" Classes="section" />
-            <ComboBox ItemsSource="{Binding BackendOptions}"
-                      SelectedItem="{Binding SelectedBackend}"
-                      HorizontalAlignment="Stretch">
-              <ComboBox.ItemTemplate>
-                <DataTemplate x:DataType="vm:BackendOption">
-                  <StackPanel Spacing="1">
-                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
-                    <TextBlock Text="{Binding Note}" Classes="muted" />
-                  </StackPanel>
-                </DataTemplate>
-              </ComboBox.ItemTemplate>
-            </ComboBox>
-            <TextBlock Text="{Binding SettingsNotice}"
-                       Classes="muted"
-                       Foreground="#B45309"
-                       Margin="0,4,0,0" />
-
-            <TextBlock Text="显卡" Classes="section" />
-            <TextBlock Text="{Binding GpuSummary}" Classes="muted" FontSize="13" />
-
-            <TextBlock Text="系统提示词" Classes="section" />
-            <TextBox Text="{Binding SystemPrompt}"
-                     AcceptsReturn="True"
-                     TextWrapping="Wrap"
-                     Height="80"
-                     PlaceholderText="加载模型后可编辑，保存到该模型的配置里" />
-
-            <TextBlock Text="特化（坐标标注）" Classes="section" />
-            <CheckBox Content="启用特化：命中的模型按检测协议解析坐标"
-                      IsChecked="{Binding SpecializationEnabled}" />
-            <TextBox Text="{Binding SpecializedModelNamesText}"
-                     PlaceholderText="WeVisOne" />
-            <TextBlock Text="模型文件名包含任一关键词（逗号分隔）即视为检测模型；发送图片时按 referring 模板请求。"
-                       Classes="muted"
-                       FontSize="11"
-                       TextWrapping="Wrap" />
-            <TextBlock Text="当前模型已命中特化，附图后会按坐标渲染。"
-                       Foreground="#047857"
-                       FontSize="11"
-                       Margin="0,2,0,0"
-                       IsVisible="{Binding IsSpecializationActive}" />
-
-            <TextBlock Text="当前模型参数" Classes="section" />
-            <Grid ColumnDefinitions="*,12,*"
-                  RowDefinitions="Auto,Auto"
-                  RowSpacing="8"
-                  IsEnabled="{Binding HasModel}">
-              <StackPanel Grid.Row="0" Grid.Column="0" Spacing="2">
-                <TextBlock Text="GPU 层数（0 = 纯 CPU）" Classes="muted" />
-                <TextBox Text="{Binding ProfileGpuLayersText}" />
-              </StackPanel>
-              <StackPanel Grid.Row="0" Grid.Column="2" Spacing="2">
-                <TextBlock Text="上下文长度（token）" Classes="muted" />
-                <TextBox Text="{Binding ProfileContextSizeText}" />
-              </StackPanel>
-              <StackPanel Grid.Row="1" Grid.Column="0" Spacing="2">
-                <TextBlock Text="温度（0–2）" Classes="muted" />
-                <TextBox Text="{Binding ProfileTemperatureText}" />
-              </StackPanel>
-              <StackPanel Grid.Row="1" Grid.Column="2" Spacing="2">
-                <TextBlock Text="最大 token（-1 不限）" Classes="muted" />
-                <TextBox Text="{Binding ProfileMaxTokensText}" />
-              </StackPanel>
-            </Grid>
-            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0" IsEnabled="{Binding HasModel}">
-              <Button Content="保存参数" Command="{Binding SaveProfileCommand}" />
-              <Button Content="重新加载模型" Command="{Binding ReloadModelCommand}" />
-            </StackPanel>
-            <TextBlock Text="{Binding ProfileNotice}"
-                       Classes="muted"
-                       Foreground="#B45309"
-                       Margin="0,4,0,0" />
-
-            <TextBlock Text="字号" Classes="section" />
-            <Slider Minimum="12"
-                    Maximum="20"
-                    TickFrequency="1"
-                    IsSnapToTickEnabled="True"
-                    Value="{Binding FontSize}"
-                    Width="220"
-                    HorizontalAlignment="Left" />
-
-            <TextBlock Text="模型目录" Classes="section" />
-            <ItemsControl ItemsSource="{Binding ModelDirectories}">
-              <ItemsControl.ItemTemplate>
-                <DataTemplate x:CompileBindings="False">
-                  <Grid ColumnDefinitions="*,Auto" Margin="0,2">
-                    <TextBlock Text="{Binding}"
-                               TextTrimming="CharacterEllipsis"
-                               VerticalAlignment="Center"
-                               FontSize="13" />
-                    <Button Grid.Column="1"
-                            Content="移除"
-                            FontSize="12"
-                            Padding="8,2"
-                            Tag="{Binding}"
-                            Click="OnRemoveDirectoryClick" />
-                  </Grid>
-                </DataTemplate>
-              </ItemsControl.ItemTemplate>
-            </ItemsControl>
-
-            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,8,0,0">
-              <Button Content="添加目录" Command="{Binding AddDirectoryCommand}" />
-              <Button Content="重新扫描" Command="{Binding RescanCommand}" />
-            </StackPanel>
-
-            <TextBlock Text="{Binding SettingsFilePath}" Classes="muted" Margin="0,16,0,0" />
-            <TextBlock Text="{Binding SessionsDirectory}" Classes="muted" />
-          </StackPanel>
-        </ScrollViewer>
-      </Border>
-    </Border>
-
+    <!-- 无系统边框：自己补一圈缩放热区 -->
+    <Border Grid.RowSpan="2"
+            Tag="North"
+            Height="5"
+            VerticalAlignment="Top"
+            Background="Transparent"
+            Cursor="SizeNorthSouth"
+            PointerPressed="OnResizeEdgePressed" />
+    <Border Grid.RowSpan="2"
+            Tag="South"
+            Height="5"
+            VerticalAlignment="Bottom"
+            Background="Transparent"
+            Cursor="SizeNorthSouth"
+            PointerPressed="OnResizeEdgePressed" />
+    <Border Grid.RowSpan="2"
+            Tag="West"
+            Width="5"
+            HorizontalAlignment="Left"
+            Background="Transparent"
+            Cursor="SizeWestEast"
+            PointerPressed="OnResizeEdgePressed" />
+    <Border Grid.RowSpan="2"
+            Tag="East"
+            Width="5"
+            HorizontalAlignment="Right"
+            Background="Transparent"
+            Cursor="SizeWestEast"
+            PointerPressed="OnResizeEdgePressed" />
+    <Border Grid.RowSpan="2"
+            Tag="NorthWest"
+            Width="10"
+            Height="10"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Top"
+            Background="Transparent"
+            Cursor="TopLeftCorner"
+            PointerPressed="OnResizeEdgePressed" />
+    <Border Grid.RowSpan="2"
+            Tag="NorthEast"
+            Width="10"
+            Height="10"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Top"
+            Background="Transparent"
+            Cursor="TopRightCorner"
+            PointerPressed="OnResizeEdgePressed" />
+    <Border Grid.RowSpan="2"
+            Tag="SouthWest"
+            Width="10"
+            Height="10"
+            HorizontalAlignment="Left"
+            VerticalAlignment="Bottom"
+            Background="Transparent"
+            Cursor="BottomLeftCorner"
+            PointerPressed="OnResizeEdgePressed" />
+    <Border Grid.RowSpan="2"
+            Tag="SouthEast"
+            Width="10"
+            Height="10"
+            HorizontalAlignment="Right"
+            VerticalAlignment="Bottom"
+            Background="Transparent"
+            Cursor="BottomRightCorner"
+            PointerPressed="OnResizeEdgePressed" />
   </Grid>
 
 </Window>

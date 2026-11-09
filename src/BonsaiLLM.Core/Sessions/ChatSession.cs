@@ -38,7 +38,7 @@ public sealed class ChatSession
 
     public string ModelName { get; set; } = "";
 
-    public ContextMode ContextMode { get; set; } = ContextMode.Carry;
+    public ContextMode ContextMode { get; set; } = ContextMode.Fresh;
 
     public List<StoredMessage> Messages { get; set; } = [];
 }

@@ -29,7 +29,7 @@ public sealed class AppSettings
 
     public int FontSize { get; set; } = 14;
 
-    public ContextMode DefaultContextMode { get; set; } = ContextMode.Carry;
+    public ContextMode DefaultContextMode { get; set; } = ContextMode.Fresh;
 
     public ModelDefaults Defaults { get; set; } = new();
 

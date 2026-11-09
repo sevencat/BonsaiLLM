@@ -18,10 +18,7 @@ public sealed class SettingsStore
 
     public SettingsStore(string? filePath = null)
     {
-        FilePath = filePath ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "BonsaiLLM",
-            "settings.json");
+        FilePath = filePath ?? AppPaths.SettingsFile;
     }
 
     public string FilePath { get; }
