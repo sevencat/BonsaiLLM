@@ -1,0 +1,72 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:BonsaiLLM.App.ViewModels"
+        xmlns:views="using:BonsaiLLM.App.Views"
+        x:Class="BonsaiLLM.App.Views.MainWindow"
+        x:DataType="vm:MainWindowViewModel"
+        Title="BonsaiLLM"
+        Width="1040"
+        Height="760"
+        WindowStartupLocation="CenterScreen">
+
+  <Window.Styles>
+    <Style Selector="Border.bubble">
+      <Setter Property="CornerRadius" Value="12" />
+      <Setter Property="Padding" Value="14,10" />
+      <Setter Property="Margin" Value="0,6" />
+      <Setter Property="Background" Value="#F5F6F8" />
+      <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+
+    <Style Selector="Border.bubble.user">
+      <Setter Property="Background" Value="#E4E8FF" />
+      <Setter Property="HorizontalAlignment" Value="Right" />
+      <Setter Property="MaxWidth" Value="820" />
+    </Style>
+
+    <Style Selector="Border.composer">
+      <Setter Property="Padding" Value="16,12" />
+      <Setter Property="BorderThickness" Value="0,1,0,0" />
+      <Setter Property="BorderBrush" Value="#E5E7EB" />
+    </Style>
+  </Window.Styles>
+
+  <Grid RowDefinitions="Auto,*,Auto">
+
+    <Border Grid.Row="0" Padding="20,14" BorderThickness="0,0,0,1" BorderBrush="#E5E7EB">
+      <TextBlock Text="{Binding Header}" FontSize="15" FontWeight="SemiBold" />
+    </Border>
+
+    <ScrollViewer Grid.Row="1" Name="ChatScroll" Padding="20,12">
+      <ItemsControl ItemsSource="{Binding Messages}">
+        <ItemsControl.ItemTemplate>
+          <DataTemplate x:DataType="vm:ChatMessageViewModel">
+            <views:MarkdownMessageView />
+          </DataTemplate>
+        </ItemsControl.ItemTemplate>
+      </ItemsControl>
+    </ScrollViewer>
+
+    <Border Grid.Row="2" Classes="composer">
+      <Grid ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
+        <TextBox Grid.Column="0"
+                 Text="{Binding InputText}"
+                 PlaceholderText="输入消息，回车发送"
+                 AcceptsReturn="False"
+                 KeyDown="OnInputKeyDown" />
+
+        <Button Grid.Column="1"
+                Content="发送"
+                Command="{Binding SendCommand}"
+                IsVisible="{Binding !IsStreaming}" />
+
+        <Button Grid.Column="2"
+                Content="停止"
+                Command="{Binding StopCommand}"
+                IsVisible="{Binding IsStreaming}" />
+      </Grid>
+    </Border>
+
+  </Grid>
+
+</Window>

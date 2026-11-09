@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BonsaiLLM.App</RootNamespace>
+    <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    <ApplicationTitle>BonsaiLLM</ApplicationTitle>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Avalonia" Version="12.1.5" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.5" />
+    <PackageReference Include="Material.Avalonia" Version="3.21.0" />
+    <PackageReference Include="MarkView.Avalonia" Version="12.4.*" />
+    <PackageReference Include="MarkView.Avalonia.Math" Version="12.4.*" />
+    <PackageReference Include="MarkView.Avalonia.Mermaid" Version="12.4.*" />
+    <PackageReference Include="SkiaSharp" Version="4.153.1" />
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.*" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BonsaiLLM.Core\BonsaiLLM.Core.csproj" />
+    <ProjectReference Include="..\BonsaiLLM.Llama\BonsaiLLM.Llama.csproj" />
+  </ItemGroup>
+
+</Project>

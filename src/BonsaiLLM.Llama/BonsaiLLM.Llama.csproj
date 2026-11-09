@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BonsaiLLM.Llama</RootNamespace>
+    <!-- 必须显式给 RID，否则后端包 props 会走 fallback，把 linux/osx/arm64 原生库一起拷进输出 -->
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Platforms>x64</Platforms>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LLamaSharp" Version="0.30.0" />
+    <PackageReference Include="LLamaSharp.Backend.Cuda12.Windows" Version="0.30.0" />
+    <PackageReference Include="LLamaSharp.Backend.Vulkan.Windows" Version="0.30.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BonsaiLLM.Core\BonsaiLLM.Core.csproj" />
+  </ItemGroup>
+
+</Project>

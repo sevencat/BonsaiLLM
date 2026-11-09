@@ -1,0 +1,29 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:themes="clr-namespace:Material.Styles.Themes;assembly=Material.Styles"
+             x:Class="BonsaiLLM.App.App"
+             RequestedThemeVariant="Light">
+
+  <Application.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.ThemeDictionaries>
+        <!-- 链接色：MarkView 默认取主题键，Material 下需要显式给一个 -->
+        <ResourceDictionary x:Key="Light">
+          <SolidColorBrush x:Key="MarkdownLinkForeground" Color="#3B5BDB" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+          <SolidColorBrush x:Key="MarkdownLinkForeground" Color="#8FA6FF" />
+        </ResourceDictionary>
+      </ResourceDictionary.ThemeDictionaries>
+    </ResourceDictionary>
+  </Application.Resources>
+
+  <Application.Styles>
+    <!-- Material 浅色主题；不引 Fluent -->
+    <themes:MaterialTheme BaseTheme="Light" PrimaryColor="Indigo" SecondaryColor="Teal" />
+
+    <!-- Markdown 主题必须放最后，否则被通用控件样式覆盖 -->
+    <StyleInclude Source="avares://MarkView.Avalonia/Themes/MarkdownTheme.axaml" />
+  </Application.Styles>
+
+</Application>
