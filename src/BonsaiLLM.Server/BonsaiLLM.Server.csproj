@@ -1,0 +1,50 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>BonsaiLLM.Server</RootNamespace>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <Platforms>x64</Platforms>
+    <InvariantGlobalization>false</InvariantGlobalization>
+
+    <!-- Native AOT：发布成原生可执行文件，目标机不用装 .NET 运行时 -->
+    <PublishAot>true</PublishAot>
+    <StripSymbols>true</StripSymbols>
+    <!-- 配置绑定、Minimal API、JSON 全部走源生成，运行时不开反射 -->
+    <EnableConfigurationBindingGenerator>true</EnableConfigurationBindingGenerator>
+    <EnableRequestDelegateGenerator>true</EnableRequestDelegateGenerator>
+    <JsonSerializerIsReflectionEnabledByDefault>false</JsonSerializerIsReflectionEnabledByDefault>
+  </PropertyGroup>
+
+  <!-- 只引共享框架，不套 Web SDK：不需要静态资源、Razor、发布配置文件那一套 -->
+  <ItemGroup>
+    <FrameworkReference Include="Microsoft.AspNetCore.App" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\BonsaiLLM.Core\BonsaiLLM.Core.csproj" />
+    <ProjectReference Include="..\BonsaiLLM.Llama\BonsaiLLM.Llama.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <EmbeddedResource Include="web\dist\index.html" LogicalName="web.index.html" Condition="Exists('web\dist\index.html')" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NLog" Version="6.2.2" />
+    <PackageReference Include="NLog.Extensions.Logging" Version="6.2.2" />
+  </ItemGroup>
+
+  <!-- aspnetcorev2_inprocess.dll 是 IIS in-process 宿主模块，AOT 出来的 exe 用不到，发布完顺手删掉 -->
+  <Target Name="RemoveIisModule" AfterTargets="Publish" Condition="Exists('$(PublishDir)aspnetcorev2_inprocess.dll')">
+    <Delete Files="$(PublishDir)aspnetcorev2_inprocess.dll" />
+  </Target>
+
+</Project>

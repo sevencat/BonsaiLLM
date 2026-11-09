@@ -68,6 +68,49 @@ dotnet publish src/BonsaiLLM.App -c Release
 
 模型自备：把 `.gguf` 放到任意目录，首次启动后在空状态里添加这个目录即可。有视觉能力的话，把配套的 `mmproj` 放在同一目录、同一名前缀，会自动配对。
 
+## Server（OpenAI 兼容接口）
+
+`src/BonsaiLLM.Server` 是个控制台程序，把同一套推理封装挂成 HTTP 服务。模型和参数写死在 `appsettings.json` 里，不扫目录，进程内只驻留一个模型：
+
+```powershell
+dotnet run --project src/BonsaiLLM.Server
+# 默认 http://127.0.0.1:5180 ，环境变量 BONSAI_URLS 可覆盖
+```
+
+自带一个网页界面（`/`）。它用 Quasar + Vite 写，构建后由 `vite-plugin-singlefile` 打成单个 `index.html` 嵌进程序集，所以 Server 不依赖静态文件目录；页面带 `ETag`，重复打开回 304。
+
+```powershell
+cd src/BonsaiLLM.Server/web
+npm install
+npm run build
+```
+
+对外就是 OpenAI 那套，接 IDE、SDK 或 curl 都行：
+
+```powershell
+curl http://127.0.0.1:5180/v1/models
+
+curl http://127.0.0.1:5180/v1/chat/completions -H "Content-Type: application/json" -d '{
+  "model": "Qwen3-VL-4B-Q4",
+  "stream": true,
+  "messages": [{ "role": "user", "content": "你好" }]
+}'
+```
+
+`model` 填配置里的 `name`（也认路径和文件名），不带 `stream` 就返回整包响应。多模态走标准 `content` 数组，`image_url` 只收 `data:image/...;base64,`，Server 不代下载外链。
+
+日志走 NLog，级别和目录在 `appsettings.json` 的 `logLevel`（`trace|debug|info|warn|error|off`）和 `logDirectory` 里改。控制台一份，`logs/server-YYYY-MM-DD.log` 按天滚动保留 14 天，另外内存里留最近 500 条给 `/api/logs`。框架自己的请求日志只放告警以上，免得刷屏。
+
+发布成原生单文件（Native AOT，目标机不用装 .NET 运行时）：
+
+```powershell
+dotnet publish src/BonsaiLLM.Server -c Release -o publish/server-aot
+```
+
+exe 15 MB 左右；`runtimes\win-x64\native` 下的 llama/ggml 原生库是 LLamaSharp 带的，会一并复制，CUDA 那一份就占 500 MB。
+
+明确不做的：没有鉴权、没有并发（一次只跑一轮生成，后来的排队）、没有 tools / function calling、不保存会话。`/api/state`、`/api/load`、`/api/stop` 只服务自带界面，不属于 OpenAI 协议。
+
 ## 数据放在哪
 
 便携模式：`settings.json`、`sessions/`、`images/` 都在可执行文件同目录；如果那个目录不可写（比如装在 `Program Files`），自动回退到 `%AppData%\BonsaiLLM`。
