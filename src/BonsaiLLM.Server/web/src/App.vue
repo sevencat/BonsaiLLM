@@ -144,6 +144,13 @@ async function send() {
     return
   }
 
+  // 接口不会自己换模型，换模型只能在这儿点；先加载，加载完再发
+  if (needLoad.value) {
+    Notify.create({ message: `正在加载 ${current.value.id}，加载完再点一次发送`, color: 'info' })
+    await loadSelected()
+    return
+  }
+
   messages.value.push({ role: 'user', content: text, image: imageData.value })
   draft.value = ''
   imageData.value = null

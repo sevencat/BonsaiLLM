@@ -110,7 +110,17 @@ public sealed class ChatHost : IAsyncDisposable
         }
     }
 
-    public string ResolveModelId(string? model) => ResolveEntry(model)?.Name ?? "unknown";
+    /// <summary>响应里的 model 字段：优先报已加载的那个。</summary>
+    public string ResolveModelId(string? model)
+    {
+        var loaded = _engine.Loaded;
+        if (loaded is not null)
+        {
+            return FindEntry(loaded.Path)?.Name ?? DisplayName(loaded);
+        }
+
+        return ResolveEntry(model)?.Name ?? "unknown";
+    }
 
     /// <summary>界面用的显式加载：按模型名/路径/文件名都能点。</summary>
     public bool StartLoad(string model)
@@ -164,10 +174,28 @@ public sealed class ChatHost : IAsyncDisposable
         OpenAiChatRequest request,
         [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        var entry = ResolveEntry(request.Model);
+        // 接口不负责换模型：只认当前驻留的那个，切换和加载留给网页。
+        var loaded = _engine.Loaded;
+        if (loaded is null)
+        {
+            yield return ChatEventDto.Error("还没有加载模型，先在网页上点「加载」再请求。");
+            yield break;
+        }
+
+        var requestedKey = (request.Model ?? string.Empty).Trim();
+        if (requestedKey.Length > 0 && MatchEntry(requestedKey) is { } requested &&
+            !PathsEqual(requested.Descriptor.Path, loaded.Path))
+        {
+            var currentName = FindEntry(loaded.Path)?.Name ?? DisplayName(loaded);
+            yield return ChatEventDto.Error(
+                $"模型 {requested.Name} 没有加载，当前是 {currentName}；请先在网页上切换，接口不会自己换模型。");
+            yield break;
+        }
+
+        var entry = FindEntry(loaded.Path);
         if (entry is null)
         {
-            yield return ChatEventDto.Error("没有可用模型，检查 appsettings.json 的 models");
+            yield return ChatEventDto.Error("已加载的模型不在 appsettings.json 里了，重启 Server 试试。");
             yield break;
         }
 
@@ -175,13 +203,6 @@ public sealed class ChatHost : IAsyncDisposable
         if (parseError is not null)
         {
             yield return ChatEventDto.Error(parseError);
-            yield break;
-        }
-
-        var loadError = await EnsureLoadedAsync(entry, cancellationToken);
-        if (loadError is not null)
-        {
-            yield return ChatEventDto.Error(loadError);
             yield break;
         }
 
@@ -536,20 +557,26 @@ public sealed class ChatHost : IAsyncDisposable
             ? _options.DefaultSystemPrompt
             : entry.Config.SystemPrompt!;
 
+    /// <summary>只做精确匹配（name / 全路径 / 文件名 / 去扩展名的文件名），不做兜底。</summary>
+    private ModelEntry? MatchEntry(string key) =>
+        key.Length == 0
+            ? null
+            : _entries.FirstOrDefault(item =>
+                string.Equals(item.Name, key, StringComparison.OrdinalIgnoreCase)
+                || PathsEqual(item.Descriptor.Path, key)
+                || string.Equals(item.Descriptor.FileName, key, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(
+                    Path.GetFileNameWithoutExtension(item.Descriptor.FileName),
+                    key,
+                    StringComparison.OrdinalIgnoreCase));
+
     private ModelEntry? ResolveEntry(string? model)
     {
         var key = (model ?? string.Empty).Trim();
 
         if (key.Length > 0)
         {
-            var matched = _entries.FirstOrDefault(item =>
-                string.Equals(item.Name, key, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(item.Descriptor.Path, key, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(item.Descriptor.FileName, key, StringComparison.OrdinalIgnoreCase)
-                || string.Equals(
-                    Path.GetFileNameWithoutExtension(item.Descriptor.FileName),
-                    key,
-                    StringComparison.OrdinalIgnoreCase));
+            var matched = MatchEntry(key);
 
             if (matched is not null)
             {

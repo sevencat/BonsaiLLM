@@ -99,6 +99,8 @@ curl http://127.0.0.1:5180/v1/chat/completions -H "Content-Type: application/jso
 
 `model` 填配置里的 `name`（也认路径和文件名），不带 `stream` 就返回整包响应。多模态走标准 `content` 数组，`image_url` 只收 `data:image/...;base64,`，Server 不代下载外链。
 
+**接口不会因为 `model` 自动换模型**：只认当前已加载的那个，传了配置里另一个模型名会直接报错让你先去网页切换。切换和加载只发生在 `POST /api/load`（页面右上角那个按钮）和启动时的 `defaultModel`。
+
 日志走 NLog，级别和目录在 `appsettings.json` 的 `logLevel`（`trace|debug|info|warn|error|off`）和 `logDirectory` 里改。控制台一份，`logs/server-YYYY-MM-DD.log` 按天滚动保留 14 天，另外内存里留最近 500 条给 `/api/logs`。框架自己的请求日志只放告警以上，免得刷屏。
 
 发布成原生单文件（Native AOT，目标机不用装 .NET 运行时）：
